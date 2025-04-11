@@ -1,180 +1,103 @@
 // src/utils/llm-prompts.ts
+import type { Transaction } from '../types';
+
 /**
- * This file contains the standardized prompts for the LLM conversation system
- * Separating these allows for easier testing and refinement of prompts
+ * Get the system message for the conversation, including today's date.
+ * @param todayDateString - Today's date in 'YYYY-MM-DD' format.
  */
+export function getSystemPrompt(todayDateString: string): string {
+	return `You are a friendly, helpful, and **attentive** financial assistant. Your primary goal is to extract structured transaction data (Date, Description, Amount, Type, Direction IN/OUT) from user input through natural conversation.
+    (Today's date is ${todayDateString}).
 
-/**
- * Get the system message for the conversation
- */ // src/utils/llm-prompts.ts
+    **Core Task:** Extract transaction details accurately and efficiently.
 
-export function getSystemPrompt(): string {
-	// const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }); // Consider adding for relative dates
+    **CRITICAL BEHAVIORS:**
+    1.  **Acknowledge & Use Provided Info:** When the user provides information (e.g., "spent $2 today on candy"), **immediately acknowledge** the known details ("Okay, $2 spent on candy today."). **Do NOT** ask for details the user just provided.
+    2.  **Ask Only for Missing Details:** If information is missing (e.g., no date, no description), ask a **specific question** targeting *only* the missing piece(s). (e.g., "What was that purchase for?", "On what date was that?").
+    3.  **Infer Sensibly:** Infer direction ('in'/'out') from keywords like "spent", "paid", "received", "got paid", "sold". Only ask for direction if truly ambiguous (e.g., "transaction with John Doe for $50"). Use 'out' for "spent", 'in' for "received".
+    4.  **Check History (Implicitly):** Before asking a question, assume the user might have provided the detail earlier in the *current* turn or the immediately preceding one. Avoid re-asking recently answered questions.
+    5.  **Handle Grouped Items:** If the user mentions multiple items for one amount (e.g., "$100 for gas and laundry"), ask them how they want to log it: "For the $100 spent on gas and laundry, would you like to log that as one transaction, or split it into separate entries for gas and laundry?"
+    6.  **Date Format:** Use 'YYYY-MM-DD' format when confirming dates internally (based on today being ${todayDateString}). If the user expresses a dislike for that format, acknowledge their preference (e.g., "Okay, I can use 'Month Day, Year' going forward.") and try to use it in subsequent confirmations *for that specific user interaction*.
+    7.  **Confirmation:** Confirm understanding *after* gathering seemingly complete details for a transaction, or when summarizing multiple transactions. Avoid excessive confirmation after every single piece of information. Example: "Got it: $2 spent on candy, April 11, 2025 using Card. Sound right?"
 
-	return `You are a friendly, helpful financial assistant designed to extract structured transaction data (Date, Description, Amount, Type, Direction IN/OUT) from user input.
+    **Other Guidelines:**
+    - Be conversational and friendly.
+    - Aim for 'YYYY-MM-DD' date resolution initially.
+    - Default unknown fields appropriately ("unknown", "Other") but prioritize asking.
 
-    **Core Task:** Extract transaction details accurately.
-
-    **CRITICAL BEHAVIOR: Handling Incomplete Information**
-    - If a user provides partial transaction info (e.g., amount and date but no description like "I spent $120 on April 3 2024"), **DO NOT** state that you cannot recognize the transaction or ask them to paste data again.
-    - Instead, **ACKNOWLEDGE** the information provided and **ASK a specific, friendly question** to get the missing detail(s).
-    - Example 1 (Missing Description):
-        User: I spent $120 on April 3 2024.
-        Assistant: Okay, $120 spent on April 3, 2024. What was that purchase for?
-    - Example 2 (Missing Amount):
-        User: Paid my rent last Tuesday.
-        Assistant: Got it, rent paid last Tuesday. How much was the payment?
-    - Example 3 (Ambiguous Direction):
-        User: $500 from John Doe on May 1st.
-        Assistant: Okay, $500 involving John Doe on May 1st. Was that money you received, or money you paid out?
-
-    **Other Important Guidelines:**
-    1.  **Be Conversational:** Act like a finance friend – warm, clear, and helpful.
-    2.  **Extract Diligently:** Handle both formal data pastes and informal descriptions ("spent $20 at Target").
-    3.  **Clarify IN vs. OUT:** Use terms like "spent", "paid", "bought" (OUT) and "received", "deposit", "income" (IN). Assume "spent" means OUT unless otherwise specified. Ask if ambiguous.
-    4.  **Accuracy:** Capture amounts and dates precisely. Format amounts like $120.00.
-    5.  **Summarize Clearly:** When asked, summarize extracted transactions logically (e.g., by date or category).
-
-    **Extraction Fields:**
-    - Date: Specific (MM/DD/YYYY, etc.) or relative ("yesterday"). Default: "unknown", then ask.
-    - Description: Merchant, person, service. Default: "unknown", then ask.
-    - Amount: Numeric dollar amount. Default: 0, then ask.
-    - Type: Infer ("Card", "Cash", "Income", etc.). Default: "Other", then ask.
-    - Direction: "IN" or "OUT". Default: "unknown", then ask.
-
-    Your goal is to guide the user to provide complete information through natural conversation when extraction results are incomplete. Avoid generic failure messages when partial data exists.`;
+    Your goal is to feel like an efficient assistant who listens, remembers recent context, and only asks necessary questions.`;
 }
-/**
- * Prompt for extracting transactions from text
- */ // src/utils/llm-prompts.ts
 
-export function getExtractionPrompt(text: string): string {
-	return `Carefully analyze the following text and extract all possible financial transactions, even if the information is incomplete or informal. Focus on extracting the core details available.
+/**
+ * Prompt for extracting transactions from text, including today's date context.
+ */
+export function getExtractionPrompt(text: string, todayDateString: string): string {
+	// ... (Keep implementation from llm-prompts-with-date artifact) ...
+    return `Carefully analyze the following text and extract all possible financial transactions, even if the information is incomplete or informal.
+    (For context, today's date is ${todayDateString}).
 
     Text to Analyze:
     "${text}"
 
-    For each potential transaction found, provide the following details in JSON format within a 'transactions' array. **If a detail is not explicitly mentioned or clearly inferable, use the string "unknown".** Do not make up information.
+    For each potential transaction found, provide the following details in JSON format within a 'transactions' array. If a detail is not explicitly mentioned or clearly inferable, use the string "unknown". Resolve relative dates like "today" or "yesterday" to 'YYYY-MM-DD' format based on today being ${todayDateString}.
 
     Required JSON fields for each transaction object:
-    1.  date: (String) Specific date "MM/DD/YYYY", relative time "yesterday", or "unknown".
+    1.  date: (String) Specific date "YYYY-MM-DD" or "unknown".
     2.  description: (String) Merchant, person, service, or "unknown".
     3.  details: (String) Any extra context provided. Empty string "" if none.
     4.  type: (String) Best guess ("Card", "Cash", "Income", etc.) or "unknown".
     5.  amount: (Number) The numeric dollar amount (e.g., 120.00). Use 0 if not found.
-    6.  direction: (String) "IN" for received, "OUT" for spent/paid. Infer based on keywords like "spent", "paid", "received". Default to "unknown" if truly ambiguous or keywords are missing.
+    6.  direction: (String) "IN" for received, "OUT" for spent/paid. Infer based on keywords. Default to "unknown" if ambiguous.
 
-    **Example 1:**
-    Input: "I spent $120 on April 3 2024."
-    Output JSON:
+    Example Input: "I spent $20 at Target yesterday" (assuming today is 2025-04-11)
+    Example Output JSON:
     {
       "transactions": [
         {
-          "date": "04/03/2024",
-          "description": "unknown",
+          "date": "2025-04-10",
+          "description": "Target",
           "details": "",
           "type": "unknown",
-          "amount": 120.00,
+          "amount": 20.00,
           "direction": "OUT"
         }
       ]
     }
 
-    **Example 2:**
-    Input: "$500 received last week"
-    Output JSON:
-    {
-      "transactions": [
-        {
-          "date": "last week",
-          "description": "unknown",
-          "details": "",
-          "type": "unknown",
-          "amount": 500.00,
-          "direction": "IN"
-        }
-      ]
-    }
-
-    **Example 3:**
-    Input: "Target purchase"
-    Output JSON:
-    { "transactions": [] } // Not enough info (needs amount/date)
-
-    Output **only** the raw JSON object containing the 'transactions' array. No explanations. If no plausible transaction is found (missing amount/date/action), return: { "transactions": [] }`;
+    Output **only** the raw JSON object containing the 'transactions' array. No explanations. If no plausible transaction is found, return: { "transactions": [] }`;
 }
+
 /**
- * Prompt for summarizing extracted transactions
+ * Prompt for summarizing extracted transactions.
  */
-export function getSummaryPrompt(transactions: any[]): string {
-	// Calculate some basic statistics
-	const incomeTotal = transactions
-		.filter((t) => t.direction === 'IN')
-		.reduce((sum, t) => sum + (parseFloat(t.amount.toString()) || 0), 0);
-
-	const expenseTotal = transactions
-		.filter((t) => t.direction === 'OUT')
-		.reduce((sum, t) => sum + (parseFloat(t.amount.toString()) || 0), 0);
-
+export function getSummaryPrompt(transactions: Transaction[]): string {
+	// ... (Keep implementation from llm-prompts-with-date artifact, maybe refine wording) ...
+    const incomeTotal = transactions.filter(t => t.direction === 'in').reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+	const expenseTotal = transactions.filter(t => t.direction === 'out').reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
 	const netTotal = incomeTotal - expenseTotal;
-
-	// Get date range
 	let dateRange = 'unknown';
-	const datedTransactions = transactions.filter((t) => t.date && t.date !== 'unknown');
-	if (datedTransactions.length > 0) {
-		// This is a simplified approach - may need more sophisticated date parsing
-		dateRange = `${datedTransactions[0].date} to ${datedTransactions[datedTransactions.length - 1].date}`;
-	}
+	const validDates = transactions.map(t => t.date).filter(d => d && d !== 'unknown' && !isNaN(new Date(d).getTime())).sort();
+	if (validDates.length > 0) { dateRange = `${validDates[0]} to ${validDates[validDates.length - 1]}`; if (validDates.length === 1) dateRange = validDates[0]; }
 
-	return `I need to summarize the transactions I've extracted.
-    
-    Here are the statistics:
-    - Total transactions: ${transactions.length}
-    - Money IN (income/refunds): $${incomeTotal.toFixed(2)}
-    - Money OUT (expenses): $${expenseTotal.toFixed(2)}
-    - Net total: $${netTotal.toFixed(2)}
-    - Date range: ${dateRange}
-    
-    Please provide a clear, friendly summary of these transactions, organizing them by category (income vs. expenses).
-    Mention the total amounts and ask if the user wants to add these transactions to their list or make adjustments.
-    
-    Make sure all calculations are double-checked and accurate.`;
+	return `Okay, let's summarize the ${transactions.length} transaction(s) we've discussed.
+
+    Summary:
+    - Total Income (IN): ${formatCurrency(incomeTotal)}
+    - Total Expenses (OUT): ${formatCurrency(expenseTotal)}
+    - Net Result: ${formatCurrency(netTotal)}
+    - Date Range Covered: ${dateRange}
+
+    [Optional: Add a brief insight if possible, e.g., "The largest expense was..." or "Income mainly came from..." - Keep it short]
+
+    Do you want to add these transactions to your main list now, or make any changes?`;
 }
 
-/**
- * Prompt for improving the quality of extraction when a user adds new transactions
- */
-export function getTransactionUpdatePrompt(newText: string, existingTransactions: any[]): string {
-	return `The user has provided additional transaction information. Please extract any new transactions and integrate them with the existing ones.
-    
-    New information: "${newText}"
-    
-    Existing transactions:
-    ${JSON.stringify(existingTransactions, null, 2)}
-    
-    Extract all transactions from the new information and provide them in the same format.
-    For any transactions that seem to clarify or update existing ones, please note this.
-    
-    Format as JSON like this:
-    {
-      "newTransactions": [
-        {
-          "date": "MM/DD/YYYY or description",
-          "description": "Merchant or transaction description",
-          "details": "Additional details about the transaction",
-          "type": "Transaction type",
-          "amount": 123.45,
-          "direction": "IN or OUT"
-        }
-      ],
-      "updatedTransactions": [
-        {
-          "index": 0, // Index of the transaction to update
-          "updatedFields": {
-            "date": "New date value",
-            // Other updated fields
-          }
-        }
-      ]
-    }`;
+// --- Add formatCurrency helper locally if not imported ---
+// (Ideally import from helpers.ts)
+function formatCurrency(amount: number): string {
+	return amount.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 }
+
+
+// Keep getTransactionUpdatePrompt if it exists
+// export function getTransactionUpdatePrompt(newText: string, existingTransactions: any[]): string { ... }

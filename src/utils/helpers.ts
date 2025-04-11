@@ -1,23 +1,10 @@
 // src/utils/helpers.ts
-import type { Transaction } from '../types';
 
 /**
  * Formats a number as currency
  * @param amount The amount to format
  * @returns Formatted currency string
  */
-export function formatCurrency(amount: number | string): string {
-	// Ensure amount is a number
-	const numAmount = typeof amount === 'string' ? parseFloat(amount.replace(/[$,]/g, '')) : amount;
-
-	// Return formatted currency
-	return numAmount.toLocaleString('en-US', {
-		style: 'currency',
-		currency: 'USD',
-		minimumFractionDigits: 2,
-		maximumFractionDigits: 2
-	});
-}
 
 /**
  * Formats a date string to a standard format
@@ -142,14 +129,6 @@ export function calculateMonthlyTotals(
 }
 
 /**
- * Generate a unique ID for a transaction
- * @returns A unique string ID
- */
-export function generateTransactionId(): number {
-	return Date.now() + Math.floor(Math.random() * 1000);
-}
-
-/**
  * Extracts the year from a date string
  * @param dateStr Date string
  * @returns Year as number or undefined if parsing fails
@@ -198,3 +177,98 @@ export function downloadFile(data: string, filename: string, mimeType: string): 
 	// Clean up the URL object
 	setTimeout(() => URL.revokeObjectURL(url), 100);
 }
+// src/utils/helpers.ts
+import type { Transaction } from '../types';
+
+/**
+ * Formats a number as currency
+ * @param amount The amount to format
+ * @returns Formatted currency string
+ */
+export function formatCurrency(amount: number | string): string {
+	const numAmount = typeof amount === 'string' ? parseFloat(amount.replace(/[$,]/g, '')) : amount;
+	if (isNaN(numAmount)) {
+		return '$0.00'; // Or handle error appropriately
+	}
+	return numAmount.toLocaleString('en-US', {
+		style: 'currency',
+		currency: 'USD',
+		minimumFractionDigits: 2,
+		maximumFractionDigits: 2
+	});
+}
+
+/**
+ * Tries to parse a date string (accepting various formats) and returns YYYY-MM-DD.
+ * Handles relative terms "today" and "yesterday".
+ * @param dateStr The input date string.
+ * @returns Date string in YYYY-MM-DD format, or the original string if not recognized/parsable, or 'unknown'.
+ */
+export function resolveAndFormatDate(dateStr: string | undefined | null): string {
+	if (
+		!dateStr ||
+		typeof dateStr !== 'string' ||
+		dateStr.trim() === '' ||
+		dateStr.trim().toLowerCase() === 'unknown'
+	) {
+		return 'unknown';
+	}
+
+	const lowerDateStr = dateStr.toLowerCase().trim();
+	const today = new Date();
+	today.setHours(0, 0, 0, 0); // Normalize to start of day
+
+	let resolvedDate: Date | null = null;
+
+	// Handle relative dates
+	if (lowerDateStr === 'today') {
+		resolvedDate = today;
+	} else if (lowerDateStr === 'yesterday') {
+		resolvedDate = new Date(today);
+		resolvedDate.setDate(today.getDate() - 1);
+	}
+	// Add more relative terms here if needed (e.g., 'tomorrow', 'last friday')
+
+	// If not resolved relatively, try direct parsing
+	if (!resolvedDate) {
+		try {
+			const parsed = new Date(dateStr);
+			// Check for invalid date (e.g., Date("invalid string") -> Invalid Date)
+			if (!isNaN(parsed.getTime())) {
+				// Basic sanity check for year (e.g., avoid 1970 from bad parsing)
+				if (parsed.getFullYear() > 1980 && parsed.getFullYear() < 2100) {
+					resolvedDate = parsed;
+					resolvedDate.setHours(0, 0, 0, 0); // Normalize
+				}
+			}
+		} catch (e) {
+			// Ignore parsing errors, will return original string below
+			console.warn(`[resolveAndFormatDate] Could not parse date: ${dateStr}`);
+		}
+	}
+
+	// Format if resolved
+	if (resolvedDate) {
+		const year = resolvedDate.getFullYear();
+		const month = String(resolvedDate.getMonth() + 1).padStart(2, '0');
+		const day = String(resolvedDate.getDate()).padStart(2, '0');
+		return `${year}-${month}-${day}`;
+	}
+
+	// Return original string if it couldn't be parsed/resolved
+	console.warn(`[resolveAndFormatDate] Returning original unparsed date: ${dateStr}`);
+	return dateStr;
+}
+
+/**
+ * Generate a unique ID for a transaction (simple version)
+ * @returns A unique number ID
+ */
+export function generateTransactionId(): number {
+	// Combine timestamp with random number for better uniqueness chance
+	return Date.now() + Math.floor(Math.random() * 10000);
+}
+
+// Keep other helper functions if they exist (like groupTransactionsByMonth, etc.)
+// formatDate might be replaced by resolveAndFormatDate depending on usage
+// export function formatDate(dateStr: string): string { ... }

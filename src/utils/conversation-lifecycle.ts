@@ -1,4 +1,4 @@
-// src/utils/conversation.lifecycle.ts
+// src/utils/conversation-lifecycle.ts
 import { get } from 'svelte/store';
 import {
 	conversationActive,
@@ -10,6 +10,8 @@ import {
 	initialPromptSent
 } from './conversation-store';
 import type { Transaction } from '../types';
+// --- IMPORT addTransactions from the main store ---
+import { addTransactions } from '../store';
 
 /**
  * Resets all conversation stores to their initial states.
@@ -20,19 +22,17 @@ export function resetConversationState(): void {
 	conversationMessages.set([]);
 	conversationProgress.set(0);
 	conversationStatus.set('');
-	extractedTransactions.set([]);
+	extractedTransactions.set([]); // Clear temporary transactions
 	isProcessing.set(false);
-	initialPromptSent.set(false); // Reset for next time chat is opened
+	initialPromptSent.set(false);
 }
 
 /**
  * Initializes the conversation state and adds the welcome message.
  */
 export function initializeConversation(): void {
-	// Reset state first ensures clean start even if called multiple times
 	resetConversationState();
 	console.log('[initializeConversation] Initializing chat.');
-
 	conversationMessages.set([
 		{
 			role: 'assistant',
@@ -41,24 +41,37 @@ export function initializeConversation(): void {
 		}
 	]);
 	conversationActive.set(true);
-	// isProcessing, initialPromptSent are already false from reset
 }
 
 /**
- * Ends the conversation, retrieves extracted transactions, and resets state.
- * @returns The array of extracted Transactions.
+ * Ends the conversation, adds extracted transactions to the main store, and resets state.
+ * @returns The array of extracted Transactions that were added.
  */
 export function completeConversation(): Transaction[] {
 	console.log('[completeConversation] Completing conversation.');
-	const transactions = get(extractedTransactions);
-	resetConversationState();
-	return transactions;
+	// Get transactions from the temporary chat store
+	const transactionsToAdd = get(extractedTransactions);
+
+	// --- Add transactions to the main application store ---
+	if (transactionsToAdd && transactionsToAdd.length > 0) {
+		console.log(
+			`[completeConversation] Adding ${transactionsToAdd.length} transactions to main store.`
+		);
+		// Call the action imported from the main store
+		addTransactions(transactionsToAdd);
+	} else {
+		console.log(`[completeConversation] No transactions to add.`);
+	}
+	// ---
+
+	resetConversationState(); // Reset chat state afterwards
+	return transactionsToAdd; // Return the transactions that were processed
 }
 
 /**
- * Aborts the conversation and resets state without returning transactions.
+ * Aborts the conversation and resets state without adding transactions.
  */
 export function abortConversation(): void {
 	console.log('[abortConversation] Aborting conversation.');
-	resetConversationState();
+	resetConversationState(); // Just reset, don't add
 }
