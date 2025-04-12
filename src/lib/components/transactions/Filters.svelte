@@ -1,6 +1,7 @@
-<!-- src/components/Filters.svelte -->
+<!-- src/lib/components/transactions/Filters.svelte -->
 <script lang="ts">
-	import { transactions, filterCategory, searchTerm, categories } from '../store';
+	import { transactions, filterCategory, searchTerm } from '$lib/stores';
+	import { categories } from '$lib/stores/transactionStore';
 </script>
 
 {#if $transactions.length > 0}

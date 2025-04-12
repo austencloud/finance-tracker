@@ -1,14 +1,14 @@
-<!-- src/components/TransactionModal.svelte -->
+<!-- src/lib/components/transactions/TransactionModal.svelte -->
 <script lang="ts">
 	import {
 		showTransactionDetails,
 		selectedTransaction,
 		currentCategory,
-		categories,
 		assignCategory,
 		addNotes
-	} from '../store';
-	import { suggestCategory, isLLMAvailable } from '../utils/llm';
+	} from '$lib/stores';
+	import { categories } from '$lib/stores/transactionStore';
+	import { suggestCategory, isLLMAvailable } from '$lib/services/ai';
 
 	let notes = '';
 	let suggestingCategory = false;

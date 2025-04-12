@@ -1,4 +1,4 @@
-// src/types.ts
+// src/lib/types/transaction.ts
 export type Category =
 	| 'PayPal Transfers'
 	| 'Business Income - Austen Cloud Performance'
@@ -18,7 +18,7 @@ export interface Transaction {
 	amount: string | number;
 	category: Category;
 	notes: string;
-	direction: 'in' | 'out' | 'unknown'; 
+	direction: 'in' | 'out' | 'unknown';
 }
 
 export interface CategoryTotals {

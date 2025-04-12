@@ -1,12 +1,13 @@
-// src/utils/llm-prompts.ts
-import type { Transaction } from '../types';
+// src/lib/services/ai/prompts.ts
+import type { Transaction } from '$lib/types';
+import { formatCurrency } from '$lib/utils/currency';
 
 /**
  * Get the system message for the conversation, including today's date.
  * @param todayDateString - Today's date in 'YYYY-MM-DD' format.
  */
 export function getSystemPrompt(todayDateString: string): string {
-	return `You are a friendly, helpful, and **attentive** financial assistant. Your primary goal is to extract structured transaction data (Date, Description, Amount, Type, Direction IN/OUT) from user input through natural conversation.
+  return `You are a friendly, helpful, and **attentive** financial assistant. Your primary goal is to extract structured transaction data (Date, Description, Amount, Type, Direction IN/OUT) from user input through natural conversation.
     (Today's date is ${todayDateString}).
 
     **Core Task:** Extract transaction details accurately and efficiently.
@@ -32,8 +33,7 @@ export function getSystemPrompt(todayDateString: string): string {
  * Prompt for extracting transactions from text, including today's date context.
  */
 export function getExtractionPrompt(text: string, todayDateString: string): string {
-	// ... (Keep implementation from llm-prompts-with-date artifact) ...
-    return `Carefully analyze the following text and extract all possible financial transactions, even if the information is incomplete or informal.
+  return `Carefully analyze the following text and extract all possible financial transactions, even if the information is incomplete or informal.
     (For context, today's date is ${todayDateString}).
 
     Text to Analyze:
@@ -71,15 +71,17 @@ export function getExtractionPrompt(text: string, todayDateString: string): stri
  * Prompt for summarizing extracted transactions.
  */
 export function getSummaryPrompt(transactions: Transaction[]): string {
-	// ... (Keep implementation from llm-prompts-with-date artifact, maybe refine wording) ...
-    const incomeTotal = transactions.filter(t => t.direction === 'in').reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
-	const expenseTotal = transactions.filter(t => t.direction === 'out').reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
-	const netTotal = incomeTotal - expenseTotal;
-	let dateRange = 'unknown';
-	const validDates = transactions.map(t => t.date).filter(d => d && d !== 'unknown' && !isNaN(new Date(d).getTime())).sort();
-	if (validDates.length > 0) { dateRange = `${validDates[0]} to ${validDates[validDates.length - 1]}`; if (validDates.length === 1) dateRange = validDates[0]; }
+  const incomeTotal = transactions.filter(t => t.direction === 'in').reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+  const expenseTotal = transactions.filter(t => t.direction === 'out').reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+  const netTotal = incomeTotal - expenseTotal;
+  let dateRange = 'unknown';
+  const validDates = transactions.map(t => t.date).filter(d => d && d !== 'unknown' && !isNaN(new Date(d).getTime())).sort();
+  if (validDates.length > 0) { 
+    dateRange = `${validDates[0]} to ${validDates[validDates.length - 1]}`; 
+    if (validDates.length === 1) dateRange = validDates[0];
+  }
 
-	return `Okay, let's summarize the ${transactions.length} transaction(s) we've discussed.
+  return `Okay, let's summarize the ${transactions.length} transaction(s) we've discussed.
 
     Summary:
     - Total Income (IN): ${formatCurrency(incomeTotal)}
@@ -92,12 +94,27 @@ export function getSummaryPrompt(transactions: Transaction[]): string {
     Do you want to add these transactions to your main list now, or make any changes?`;
 }
 
-// --- Add formatCurrency helper locally if not imported ---
-// (Ideally import from helpers.ts)
-function formatCurrency(amount: number): string {
-	return amount.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+/**
+ * Get prompt for suggesting a category for a transaction
+ */
+export function getCategorySuggestionPrompt(transaction: Transaction, categories: string[]): string {
+  return `
+    You are a financial transaction categorizer. Based on the transaction details below, suggest the most appropriate category from this list: ${categories.join(', ')}.
+    
+    Transaction:
+    Date: ${transaction.date}
+    Description: ${transaction.description}
+    Type: ${transaction.type}
+    Amount: $${transaction.amount}
+    
+    Consider common patterns:
+    - PayPal transfers often involve "PAYPAL" in the description
+    - Business income for Austen Cloud Performance may include client names like "KAREN M BURRIS", "FULL MOON JAM FOUNDATION", "PYROTECHNIQ", "ROBERT G BERSHADSKY"
+    - Crypto sales usually mention "Coinbase" or "COINBASE"
+    - Non-taxable research may mention "Open Research" or "YC RESEARCH"
+    - Insect Asylum work will include "THE INSECT ASYLUM INC."
+    - Card transactions are typically expenses
+    
+    Respond with just the category name, nothing else.
+  `;
 }
-
-
-// Keep getTransactionUpdatePrompt if it exists
-// export function getTransactionUpdatePrompt(newText: string, existingTransactions: any[]): string { ... }

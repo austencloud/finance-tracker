@@ -1,4 +1,6 @@
-import type { Transaction } from '../types';
+// src/lib/services/analytics.ts
+import type { Transaction } from '$lib/types';
+import { isLLMAvailable } from './ai/llm-client';
 
 /**
  * Process financial calculations using the LLM
@@ -9,7 +11,8 @@ export async function calculateFinancialSummary(transactions: Transaction[]) {
 		const stats = computeBasicStats(transactions);
 
 		// For more complex calculations, use the LLM
-		const llmSummary = await getLLMAnalysis(transactions, stats);
+		const llmAvailable = await isLLMAvailable();
+		const llmSummary = llmAvailable ? await getLLMAnalysis(transactions, stats) : null;
 
 		return {
 			...stats,
@@ -146,8 +149,15 @@ export async function detectAnomalies(transactions: Transaction[]) {
 	}
 
 	try {
+		// Check if LLM is available
+		const llmAvailable = await isLLMAvailable();
+		if (!llmAvailable) {
+			return { anomalies: [] };
+		}
+
 		// Prepare transaction data
-		const transactionData = transactions.map((t) => ({
+		const transactionData = transactions.map((t, index) => ({
+			index,
 			date: t.date,
 			description: t.description,
 			amount: parseFloat(t.amount.toString().replace(/[$,]/g, '')),

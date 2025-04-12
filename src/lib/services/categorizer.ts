@@ -1,5 +1,5 @@
-// src/utils/categorizer.ts
-import type { Category } from '../types';
+// src/lib/services/categorizer.ts
+import type { Category } from '$lib/types';
 
 /**
  * Categorizes a transaction based on its description and type

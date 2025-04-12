@@ -1,20 +1,14 @@
-// src/utils/exporters.ts
-import type { Transaction, Category, CategoryTotals } from '../types';
-import { categories } from '../store';
+// src/lib/services/exporter.ts
+import type { Transaction, Category, CategoryTotals } from '$lib/types';
+import { categories } from '$lib/stores/transactionStore';
+import { downloadFile } from '$lib/utils/helpers';
 
 /**
  * Exports transactions as JSON file
  */
 export function exportAsJson(transactions: Transaction[]): void {
 	const dataStr = JSON.stringify(transactions, null, 2);
-	const dataUri = `data:application/json;charset=utf-8,${encodeURIComponent(dataStr)}`;
-
-	const exportFileDefaultName = 'transactions.json';
-
-	const linkElement = document.createElement('a');
-	linkElement.setAttribute('href', dataUri);
-	linkElement.setAttribute('download', exportFileDefaultName);
-	linkElement.click();
+	downloadFile(dataStr, 'transactions.json', 'application/json;charset=utf-8');
 }
 
 /**
@@ -140,11 +134,6 @@ export function generateHTMLReport(
     </html>
   `;
 
-	// Create a data URI and download the HTML file
-	const dataUri = `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
-
-	const linkElement = document.createElement('a');
-	linkElement.setAttribute('href', dataUri);
-	linkElement.setAttribute('download', 'transaction-report.html');
-	linkElement.click();
+	// Download the HTML file
+	downloadFile(html, 'transaction-report.html', 'text/html;charset=utf-8');
 }

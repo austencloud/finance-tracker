@@ -1,17 +1,16 @@
 <!-- src/App.svelte -->
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { transactions, categoryTotals, showSuccessMessage, clearTransactions } from './store';
-	import { exportAsJson } from './utils/exporters';
-	import { generateHTMLReport } from './utils/exporters';
+	import { transactions, categoryTotals, showSuccessMessage, clearTransactions } from '$lib/stores';
+	import { exportAsJson, generateHTMLReport } from '$lib/services/exporter';
 
 	// Import components
-	import InputForm from './components/InputForm.svelte';
-	import Filters from './components/Filters.svelte';
-	import TransactionsTable from './components/TransactionsTable.svelte';
-	import TransactionModal from './components/TransactionModal.svelte';
-	import CategoryTotals from './components/CategoryTotals.svelte';
-	import FinancialAnalysis from './components/FinancialAnalysis.svelte';
+	import InputForm from '$lib/components/input/InputForm.svelte';
+	import Filters from '$lib/components/transactions/Filters.svelte';
+	import TransactionsTable from '$lib/components/transactions/TransactionsTable.svelte';
+	import TransactionModal from '$lib/components/transactions/TransactionModal.svelte';
+	import CategoryTotals from '$lib/components/analysis/CategoryTotals.svelte';
+	import FinancialAnalysis from '$lib/components/analysis/FinancialAnalysis.svelte';
 
 	// Initialize the app
 	onMount(() => {
@@ -60,7 +59,7 @@
 
 		<CategoryTotals />
 		
-		<!-- Add the new Financial Analysis component -->
+		<!-- Financial Analysis component -->
 		<FinancialAnalysis />
 
 		<Filters />

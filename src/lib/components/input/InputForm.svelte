@@ -1,20 +1,17 @@
+<!-- src/lib/components/input/InputForm.svelte -->
 <script lang="ts">
-	import { loading, addTransactions, showSuccessMessage } from '../store';
-	import { parseTransactionData, getSampleData } from '../utils/parser';
-	import { isLLMAvailable } from '../utils/llm';
-	// Import conversation manager functions if needed, or handle interaction within LLMConversation
-	// import { startLLMConversation, conversationActive } from '../utils/llm-conversation-manager'; // Adjust imports as needed
+	import { loading, showSuccessMessage } from '$lib/stores/uiStore';
+	import { addTransactions } from '$lib/stores/transactionStore';
+	import { parseTransactionData, getSampleData } from '$lib/services/parser';
+	import { isLLMAvailable } from '$lib/services/ai';
 	import LLMConversation from './LLMConversation.svelte';
-	import type { Transaction } from '../types';
+	import type { Transaction } from '$lib/types';
 
-	// --- NEW: Input Mode State ---
+	// Input Mode State
 	type InputMode = 'standard' | 'aiChat';
 	let inputMode: InputMode = 'standard';
-	// --- End NEW ---
 
 	let inputText = '';
-	// let useAI = true; // Replaced by inputMode
-	// let useConversation = true; // Replaced by inputMode
 	let llmAvailable = false;
 	let processingError = '';
 
@@ -42,8 +39,6 @@
 			$loading = true;
 
 			try {
-				// Non-conversational AI processing could still be an option here if desired
-				// For now, just use the basic parser in standard mode
 				const parsedTransactions = parseTransactionData(inputText);
 				addTransactions(parsedTransactions);
 
@@ -121,10 +116,7 @@
 
 		{#if llmAvailable}
 			<div class="mode-switcher">
-				<button
-					class:active={inputMode === 'standard'}
-					on:click={() => (inputMode = 'standard')}
-				>
+				<button class:active={inputMode === 'standard'} on:click={() => (inputMode = 'standard')}>
 					Standard Input
 				</button>
 				<button class:active={inputMode === 'aiChat'} on:click={() => (inputMode = 'aiChat')}>
@@ -132,7 +124,7 @@
 				</button>
 			</div>
 		{/if}
-		</div>
+	</div>
 
 	{#if processingError}
 		<div class="error-message">
@@ -181,7 +173,8 @@
 		<div class="ai-chat-container">
 			<LLMConversation />
 		</div>
-		{/if}
+	{/if}
+
 	{#if !llmAvailable}
 		<div class="llm-status">
 			<p>
@@ -197,7 +190,6 @@
 </div>
 
 <style>
-	/* Keep existing styles */
 	.form-container {
 		margin-bottom: 30px;
 		background-color: #f8f9fa;
@@ -219,9 +211,9 @@
 
 	h2 {
 		color: #3498db;
-		margin: 0; /* Removed margin-top/bottom */
-		padding: 0; /* Removed padding-bottom */
-		border: none; /* Removed border */
+		margin: 0;
+		padding: 0;
+		border: none;
 		flex-grow: 1;
 	}
 
@@ -308,7 +300,6 @@
 		margin-bottom: 15px;
 	}
 
-	/* --- NEW Styles --- */
 	.mode-switcher {
 		display: flex;
 		border: 1px solid #ccc;
@@ -324,7 +315,9 @@
 		background-color: #f0f0f0;
 		color: #555;
 		cursor: pointer;
-		transition: background-color 0.2s, color 0.2s;
+		transition:
+			background-color 0.2s,
+			color 0.2s;
 	}
 
 	.mode-switcher button:hover:not(.active) {
@@ -344,11 +337,8 @@
 		border: 1px solid #e0e0e0;
 		border-radius: 5px;
 		margin-top: 15px;
-		background-color: white; /* Give chat a slightly different background */
+		background-color: white;
 	}
-	/* --- End NEW --- */
-
-	/* Removed AI options styles as they are replaced by the mode switcher */
 
 	.llm-status {
 		margin-top: 15px;

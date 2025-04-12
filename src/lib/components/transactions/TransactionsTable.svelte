@@ -1,4 +1,4 @@
-<!-- src/components/TransactionsTable.svelte -->
+<!-- src/lib/components/transactions/TransactionsTable.svelte -->
 <script lang="ts">
 	import {
 		sortedTransactions,
@@ -6,13 +6,11 @@
 		transactions,
 		categories,
 		deleteTransaction,
-		toggleSort,
-		sortField,
-		sortDirection,
 		selectedTransaction,
 		showTransactionDetails,
 		currentCategory
-	} from '../store';
+	} from '$lib/stores';
+	import { toggleSort, sortField, sortDirection } from '$lib/stores';
 </script>
 
 {#if $sortedTransactions.length > 0}

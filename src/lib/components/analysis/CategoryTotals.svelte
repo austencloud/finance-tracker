@@ -1,6 +1,6 @@
-<!-- src/components/CategoryTotals.svelte -->
+<!-- src/lib/components/analysis/CategoryTotals.svelte -->
 <script lang="ts">
-	import { categoryTotals } from '../store';
+	import { categoryTotals } from '$lib/stores';
 </script>
 
 {#if Object.keys($categoryTotals).length > 0}

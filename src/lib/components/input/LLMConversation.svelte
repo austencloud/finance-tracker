@@ -1,24 +1,24 @@
+<!-- src/lib/components/input/LLMConversation.svelte -->
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { get } from 'svelte/store'; // Import get from svelte/store
-	// Import Stores
+	import { get } from 'svelte/store';
+
+	// Import from services
 	import {
 		conversationMessages,
 		conversationProgress,
 		conversationStatus,
 		extractedTransactions,
-		isProcessing // Use isProcessing store
-	} from '../utils/conversation-store';
-	// Import Services
-	import { sendUserMessage, generateSummary } from '../utils/conversation-service';
-	// Import Lifecycle
-	import {
+		isProcessing,
+		sendUserMessage,
+		generateSummary,
 		initializeConversation,
 		completeConversation,
 		abortConversation
-	} from '../utils/conversation-lifecycle';
-	// Import main app store function
-	import { addTransactions } from '../store';
+	} from '$lib/services/ai/conversation';
+
+	// Import from stores
+	import { addTransactions } from '$lib/stores';
 
 	let userInput = '';
 	let messagesContainer: HTMLElement;
@@ -54,6 +54,7 @@
 			}
 			// --- End Scroll Logic ---
 		});
+
 		const unsubExtracted = extractedTransactions.subscribe((txns) => {
 			extractedCount = txns.length;
 		});
@@ -85,7 +86,6 @@
 			} else {
 				autoScroll = true;
 			}
-			// console.log("[LLMConversation] Scrolled, autoScroll:", autoScroll);
 		}
 		// --- End Scroll Logic ---
 	}
@@ -115,9 +115,8 @@
 		abortConversation();
 	}
 
-	// --- FORMAT MESSAGE LOGIC RESTORED ---
+	// --- FORMAT MESSAGE LOGIC ---
 	function formatMessage(content: string): string {
-		// console.log("[LLMConversation] Formatting message:", content?.substring(0, 50) + '...');
 		try {
 			let formatted = content || ''; // Handle null/undefined content
 			// Basic HTML escaping (important for security)
@@ -138,10 +137,7 @@
 			formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
 			// Replace _italic_
 			formatted = formatted.replace(/_(.*?)_/g, '<em>$1</em>');
-			// Replace *italic* (if needed, be careful with conflicts)
-			// formatted = formatted.replace(/\*(.*?)\*/g, '<em>$1</em>');
 
-			// Rely on CSS white-space: pre-wrap for newlines, no <br> needed
 			return formatted;
 		} catch (e) {
 			console.error('[LLMConversation] Error in formatMessage:', e);
@@ -248,13 +244,13 @@
 </div>
 
 <style>
-	/* Include all styles from the previous version */
 	.no-messages-placeholder {
 		text-align: center;
 		color: #aaa;
 		margin-top: 20px;
 		font-style: italic;
 	}
+
 	.conversation-container-embedded {
 		height: 60vh;
 		min-height: 400px;
@@ -265,6 +261,7 @@
 		border-radius: 5px;
 		background-color: #f8f9fa;
 	}
+
 	.conversation-header-embedded {
 		padding: 10px 15px;
 		background-color: #eaf2f8;
@@ -275,21 +272,25 @@
 		border-bottom: 1px solid #ddd;
 		flex-shrink: 0;
 	}
+
 	.conversation-header-embedded h4 {
 		margin: 0;
 		font-size: 16px;
 	}
+
 	.progress-container {
 		height: 4px;
 		background-color: #e0e0e0;
 		width: 100%;
 		flex-shrink: 0;
 	}
+
 	.progress-bar {
 		height: 100%;
 		background-color: #2ecc71;
 		transition: width 0.3s ease;
 	}
+
 	.status-message {
 		font-size: 13px;
 		color: #666;
@@ -300,6 +301,7 @@
 		flex-shrink: 0;
 		line-height: 1.3;
 	}
+
 	.messages-container {
 		flex-grow: 1;
 		overflow-y: auto;
@@ -309,6 +311,7 @@
 		gap: 15px;
 		background-color: white;
 	}
+
 	.message {
 		display: flex;
 		flex-direction: column;
@@ -319,18 +322,21 @@
 		font-size: 14px;
 		line-height: 1.4;
 	}
+
 	.user-message {
 		align-self: flex-end;
 		background-color: #d1eaff;
 		color: #1c3d5a;
 		border-bottom-right-radius: 4px;
 	}
+
 	.assistant-message {
 		align-self: flex-start;
 		background-color: #f1f3f5;
 		color: #343a40;
 		border-bottom-left-radius: 4px;
 	}
+
 	.message-header {
 		font-size: 11px;
 		font-weight: bold;
@@ -338,9 +344,11 @@
 		color: #6c757d;
 		text-transform: uppercase;
 	}
+
 	.message-content {
 		word-break: break-word;
 	}
+
 	:global(pre.code-block) {
 		display: block;
 		background-color: #e9ecef;
@@ -354,6 +362,7 @@
 		font-size: 13px;
 		border: 1px solid #ced4da;
 	}
+
 	.thinking .message-content {
 		display: flex;
 		align-items: center;
@@ -361,11 +370,13 @@
 		padding-top: 5px;
 		padding-bottom: 5px;
 	}
+
 	.typing-indicator {
 		display: flex;
 		align-items: center;
 		gap: 4px;
 	}
+
 	.typing-indicator span {
 		height: 8px;
 		width: 8px;
@@ -374,15 +385,19 @@
 		display: inline-block;
 		animation: typing 1.4s infinite ease-in-out both;
 	}
+
 	.typing-indicator span:nth-child(1) {
 		animation-delay: 0s;
 	}
+
 	.typing-indicator span:nth-child(2) {
 		animation-delay: 0.2s;
 	}
+
 	.typing-indicator span:nth-child(3) {
 		animation-delay: 0.4s;
 	}
+
 	@keyframes typing {
 		0%,
 		100% {
@@ -394,17 +409,20 @@
 			opacity: 1;
 		}
 	}
+
 	.input-container {
 		padding: 10px 15px;
 		border-top: 1px solid #ddd;
 		background-color: #f8f9fa;
 		flex-shrink: 0;
 	}
+
 	form {
 		display: flex;
 		flex-direction: column;
 		gap: 10px;
 	}
+
 	textarea {
 		resize: none;
 		padding: 10px 15px;
@@ -414,15 +432,18 @@
 		font-size: 14px;
 		line-height: 1.4;
 	}
+
 	textarea:disabled {
 		background-color: #e9ecef;
 		cursor: not-allowed;
 	}
+
 	textarea:focus {
 		outline: none;
 		border-color: #3498db;
 		box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
 	}
+
 	.button-container {
 		display: flex;
 		justify-content: space-between;
@@ -430,12 +451,14 @@
 		flex-wrap: wrap;
 		gap: 8px;
 	}
+
 	.action-buttons {
 		display: flex;
 		gap: 8px;
 		flex-wrap: wrap;
 		flex-grow: 1;
 	}
+
 	button {
 		padding: 8px 15px;
 		background-color: #3498db;
@@ -448,48 +471,61 @@
 		white-space: nowrap;
 		margin-top: 0;
 	}
+
 	button:hover:not(:disabled) {
 		background-color: #2980b9;
 	}
+
 	button:disabled {
 		background-color: #bdc3c7;
 		cursor: not-allowed;
 		opacity: 0.7;
 	}
+
 	.summary-button {
 		background-color: #9b59b6;
 	}
+
 	.summary-button:hover:not(:disabled) {
 		background-color: #8e44ad;
 	}
+
 	.complete-button {
 		background-color: #2ecc71;
 	}
+
 	.complete-button:hover:not(:disabled) {
 		background-color: #27ae60;
 	}
+
 	.cancel-button {
 		background-color: #e74c3c;
 	}
+
 	.cancel-button:hover:not(:disabled) {
 		background-color: #c0392b;
 	}
+
 	button[type='submit'] {
 		margin-left: auto;
 		min-width: 80px;
 	}
+
 	@media (max-width: 600px) {
 		.button-container {
 			flex-direction: column;
 			align-items: stretch;
 		}
+
 		.action-buttons {
 			order: 2;
 			justify-content: center;
 		}
+
 		.action-buttons button {
 			flex-grow: 1;
 		}
+
 		button[type='submit'] {
 			order: 1;
 			margin-left: 0;
