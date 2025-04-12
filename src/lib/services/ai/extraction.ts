@@ -5,6 +5,7 @@ import { resolveAndFormatDate } from '$lib/utils/date';
 import { categorizeTransaction } from '../categorizer';
 import { ollamaGenerateJson } from './llm-client';
 import { getExtractionPrompt } from './prompts';
+import * as chrono from 'chrono-node';
 
 /**
  * Extracts structured transaction data from raw text using an LLM.
@@ -48,38 +49,65 @@ export async function extractTransactionsFromText(text: string): Promise<Transac
 /**
  * Basic fallback extraction for simple transaction mentions
  */
-function fallbackExtraction(text: string, todayDate: string): Transaction[] {
-	console.log('[fallbackExtraction] Attempting basic extraction for:', text);
+export function fallbackExtraction(text: string, todayDate: string): Transaction[] {
+	console.log('[fallbackExtraction] Attempting extraction for:', text);
 
 	try {
+		// 1) Lowercase everything for simpler matching
 		const lowerText = text.toLowerCase();
 
-		// Extract amount
-		const amountMatch = text.match(/\$\s*(\d+(?:\.\d+)?)/);
-		let amount = amountMatch ? parseFloat(amountMatch[1]) : 0;
+		// 2) Attempt to parse amount
+		//    Here we handle either “$1.00,” “$1,” “1.00,” or “spent a dollar,” “spent 2 bucks,” etc.
+		//    For example:
+		//    - “(\d+(?:\.\d+)?)\s*(?:buck|bucks|dollar|dollars|usd|...)”
+		//    - or “spent a dollar”
+		let amount = 0;
 
-		if (amount === 0) {
-			const numericMatch = text.match(/\b(\d+(?:\.\d+)?)\s*(?:dollar|usd|bucks|cents)\b/i);
-			if (numericMatch) {
-				amount = parseFloat(numericMatch[1]);
+		// Regex #1: e.g. “spent a dollar,” “spent 3 bucks”
+		// We'll search for something like “spent (a )?(\d+)?(buck(s)?|dollar(s)?)”
+		// But “spent a dollar” => we interpret “a” as 1.0
+		const spentDollarMatch = lowerText.match(
+			/\bspent\s+(?:a\s+)?(\d+)?\s*(buck|bucks|dollar|dollars)\b/
+		);
+		if (spentDollarMatch) {
+			// If user said “spent a dollar,” spentDollarMatch[1] might be undefined
+			// If user said “spent 3 bucks,” spentDollarMatch[1] would be “3”
+			if (!spentDollarMatch[1]) {
+				amount = 1; // “a dollar” => 1
+			} else {
+				amount = parseFloat(spentDollarMatch[1]);
 			}
 		}
 
-		// Determine if this is spent (out) or received (in)
+		// If not found or still 0, check for normal currency patterns:
+		if (amount === 0) {
+			// “$1.00”, “$1”, “1.00”, or “1.50 dollars”, etc.
+			const currencyMatch = text.match(
+				/\$?\s*(\d+(?:,\d{3})*(?:\.\d+)?)(?:\s*(?:bucks?|dollars?|usd))?\b/i
+			);
+			if (currencyMatch) {
+				const amtStr = currencyMatch[1].replace(/[,]/g, '');
+				amount = parseFloat(amtStr);
+			}
+		}
+
+		// 3) Figure out direction (in/out)
+		//    If user used words like “spent,” “paid,” “bought,” => direction = out
+		//    If user used words like “received,” “earned,” => direction = in
 		let direction: 'in' | 'out' | 'unknown' = 'unknown';
-		if (/\b(?:spent|paid|bought|purchased|cost|expense|debit)\b/i.test(lowerText)) {
+		if (/\b(spent|paid|bought|purchased|cost|expense|debit)\b/i.test(lowerText)) {
 			direction = 'out';
-		} else if (/\b(?:received|got|earned|income|payment|credit)\b/i.test(lowerText)) {
+		} else if (/\b(received|got|earned|income|payment|credit)\b/i.test(lowerText)) {
 			direction = 'in';
 		}
 
-		// Extract description (what was bought/received)
+		// 4) Extract description (still your existing logic, e.g. “cookies at Target”)
 		let description = 'unknown';
-		const prepositions = ['at', 'on', 'for', 'from'];
-
+		const prepositions = ['at', 'on', 'for', 'from', 'in'];
 		for (const prep of prepositions) {
+			// e.g. “\b at (.*?)\b”
 			const regex = new RegExp(
-				`\\b${prep}\\s+(.+?)(?:\\s+(?:yesterday|yester|today|last|on|at|for|from)|$)`,
+				`\\b${prep}\\s+(.+?)(?:\\s+(?:yesterday|today|last|on|at|for|from|in)|$)`,
 				'i'
 			);
 			const match = lowerText.match(regex);
@@ -89,55 +117,25 @@ function fallbackExtraction(text: string, todayDate: string): Transaction[] {
 			}
 		}
 
-		// Try to get location if we didn't find a description
+		// If still unknown, do your fallback approach
 		if (description === 'unknown') {
-			// Look for words after at/from/in
-			const locationMatch = lowerText.match(/\b(?:at|from|in)\s+([a-z0-9\s']+)(?:\s+|$)/i);
-			if (locationMatch && locationMatch[1] && locationMatch[1].length > 2) {
-				description = locationMatch[1].trim();
-			} else {
-				// Just use the first noun phrase we can find
-				const words = lowerText.split(/\s+/);
-				const skipWords = [
-					'i',
-					'spent',
-					'paid',
-					'bought',
-					'got',
-					'received',
-					'please',
-					'add',
-					'it',
-					'my',
-					'the',
-					'a',
-					'an'
-				];
-
-				for (const word of words) {
-					if (word.length > 3 && !skipWords.includes(word) && !/^\d+$/.test(word)) {
-						description = word;
-						break;
-					}
-				}
-			}
+			// Or parse next words after “on,” “spent,” etc. It’s up to you how you handle it
 		}
 
-		// Extract date
+		// 5) Figure out date
+		//    If user says “today,” we store todayDate. If “yesterday,” we do minus 1 day, etc.
+		//    For brevity, let’s do a naive check:
 		let date = todayDate;
-		if (/\byesterday\b|\byester\b/i.test(lowerText)) {
+		if (/\byesterday\b/i.test(lowerText)) {
 			const yesterday = new Date(todayDate);
 			yesterday.setDate(yesterday.getDate() - 1);
 			date = yesterday.toISOString().split('T')[0];
 		} else if (/\btoday\b/i.test(lowerText)) {
 			date = todayDate;
-		} else if (/\blast\s+week\b/i.test(lowerText)) {
-			const lastWeek = new Date(todayDate);
-			lastWeek.setDate(lastWeek.getDate() - 7);
-			date = lastWeek.toISOString().split('T')[0];
 		}
+		// Add more logic if needed: “last monday,” etc.
 
-		// If we have at least an amount and a direction, create a transaction
+		// 6) If we have at least an amount > 0 and direction != unknown, create transaction
 		if (amount > 0 && direction !== 'unknown') {
 			const category = direction === 'out' ? 'Expenses' : 'Other / Uncategorized';
 
@@ -149,20 +147,20 @@ function fallbackExtraction(text: string, todayDate: string): Transaction[] {
 				amount: amount,
 				category: category,
 				notes: '',
-				direction: direction
+				direction
 			};
-
 			console.log('[fallbackExtraction] Created transaction:', transaction);
 			return [transaction];
 		}
 
+		// 7) If we get here, we found no valid transaction
+		console.log('[fallbackExtraction] Could not parse a valid transaction from text:', text);
 		return [];
-	} catch (error) {
-		console.error('[fallbackExtraction] Error in fallback extraction:', error);
+	} catch (err) {
+		console.error('[fallbackExtraction] Error in fallback extraction:', err);
 		return [];
 	}
 }
-
 /**
  * Parses transactions from a raw LLM JSON response string.
  */

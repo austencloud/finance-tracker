@@ -1,10 +1,10 @@
 <!-- src/lib/components/input/InputForm.svelte -->
 <script lang="ts">
+	import LLMConversationLayout from './LLMConversation/LLMConversationLayout.svelte';
 	import { loading, showSuccessMessage } from '$lib/stores/uiStore';
 	import { addTransactions } from '$lib/stores/transactionStore';
 	import { parseTransactionData, getSampleData } from '$lib/services/parser';
 	import { isLLMAvailable } from '$lib/services/ai';
-	import LLMConversation from './LLMConversation.svelte';
 	import type { Transaction } from '$lib/types';
 
 	// Input Mode State
@@ -171,7 +171,7 @@
 		</div>
 	{:else if inputMode === 'aiChat' && llmAvailable}
 		<div class="ai-chat-container">
-			<LLMConversation />
+			<LLMConversationLayout />
 		</div>
 	{/if}
 
