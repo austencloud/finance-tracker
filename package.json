@@ -25,6 +25,7 @@
 		"vite": "^6.2.5"
 	},
 	"dependencies": {
-		"chrono-node": "^2.8.0"
+		"chrono-node": "^2.8.0",
+		"uuid": "^11.1.0"
 	}
 }

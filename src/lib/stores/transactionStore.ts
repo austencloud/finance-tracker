@@ -60,7 +60,7 @@ export function clearTransactions(): void {
 	}
 }
 
-export function deleteTransaction(id: number): void {
+export function deleteTransaction(id: string): void {
 	transactions.update((txns) => txns.filter((t) => t.id !== id));
 }
 

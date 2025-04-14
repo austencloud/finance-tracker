@@ -1,59 +1,44 @@
-// src/lib/services/ai/conversation/helpers.ts
+// src/lib/services/ai/conversation/conversation-helpers.ts
 import { get } from 'svelte/store';
 import type { Transaction } from '$lib/types';
 import { deepseekChat, getFallbackResponse } from '../deepseek-client';
 import { getSystemPrompt } from '../prompts';
 import { textLooksLikeTransaction } from '$lib/utils/helpers';
 import { resolveAndFormatDate } from '$lib/utils/date';
+import { formatCurrency } from '$lib/utils/currency'; // Import formatCurrency
 import {
 	conversationMessages,
 	conversationStatus,
 	isProcessing,
 	conversationProgress,
 	extractedTransactions,
-	getState,
-	setState
+	getState, // Keep getState
+	setState // Keep setState
 } from '../store';
 
 import { BULK_DATA_THRESHOLD_LINES, BULK_DATA_THRESHOLD_LENGTH } from './constants';
 import { extractTransactionsFromText } from '../extraction/orchestrator';
 
 /**
- * Safely adds an assistant message to the conversation, with locking to prevent race conditions
- */ // In conversation-helpers.ts
-
+ * Safely adds an assistant message to the conversation, preventing overlap.
+ */
 export function safeAddAssistantMessage(content: string): void {
-	// Log attempt with lock status
+	// Log attempt
 	console.log(
 		'[safeAddAssistantMessage] Attempting to add message:',
 		content.substring(0, 50) + '...'
 	);
-	console.log('[safeAddAssistantMessage] Current lock status:', getState().messageInProgress);
 
-	// Safety mechanism: forcibly reset lock if it's been held too long
-	if (getState().messageInProgress) {
-		const lockTime = getState().messageStartTime || Date.now();
-		const lockDuration = Date.now() - lockTime;
-
-		// If lock has been held more than 3 seconds, force reset
-		if (lockDuration > 3000) {
-			console.warn(`[safeAddAssistantMessage] Lock held for ${lockDuration}ms, force resetting`);
-			setState({ messageInProgress: false, messageStartTime: 0 });
-		}
-	}
-
-	// If still locked after reset check, defer message with setTimeout
+	// --- Simplified Lock Handling ---
+	// If locked, simply log a warning and DO NOT add the message or retry.
+	// The state likely changed, making the message potentially irrelevant.
 	if (getState().messageInProgress) {
 		console.warn(
-			'[safeAddAssistantMessage] Message system locked, scheduling retry:',
+			'[safeAddAssistantMessage] Message system locked, dropping message:', // Changed log
 			content.substring(0, 50) + '...'
 		);
-
-		// Try again after a short delay
-		setTimeout(() => {
-			safeAddAssistantMessage(content);
-		}, 500);
-		return;
+		// *** REMOVED setTimeout retry ***
+		return; // Exit without adding or retrying
 	}
 
 	// Lock the message system
@@ -62,15 +47,13 @@ export function safeAddAssistantMessage(content: string): void {
 	try {
 		// Add the message
 		conversationMessages.update((msgs) => [...msgs, { role: 'assistant', content }]);
-		console.log('[safeAddAssistantMessage] Successfully added message');
+		// console.log('[safeAddAssistantMessage] Successfully added message'); // Less noisy log
 	} catch (error) {
 		console.error('[safeAddAssistantMessage] Error adding message:', error);
 	} finally {
-		// Schedule lock release after a short delay to prevent rapid-fire messages
-		setTimeout(() => {
-			setState({ messageInProgress: false, messageStartTime: 0 });
-			console.log('[safeAddAssistantMessage] Lock released');
-		}, 100);
+		// Release the lock immediately after update (Svelte updates are sync)
+		setState({ messageInProgress: false, messageStartTime: 0 });
+		// console.log('[safeAddAssistantMessage] Lock released'); // Less noisy log
 	}
 }
 
@@ -81,20 +64,23 @@ export function formatDateForDisplay(dateStr: string): string {
 	if (!dateStr || dateStr === 'unknown') return 'an unknown date';
 
 	try {
-		const resolvedDate = resolveAndFormatDate(dateStr);
-		if (resolvedDate !== 'unknown' && resolvedDate !== dateStr) {
+		// Use chrono-node via resolveAndFormatDate first for better parsing
+		const resolvedDate = resolveAndFormatDate(dateStr); // This returns YYYY-MM-DD or original/unknown
+		if (resolvedDate !== 'unknown' && /\d{4}-\d{2}-\d{2}/.test(resolvedDate)) {
+			// Add time T00:00:00 to avoid timezone issues when creating Date object
 			const d = new Date(resolvedDate + 'T00:00:00');
 			if (!isNaN(d.getTime())) {
 				return d.toLocaleDateString('en-US', {
 					weekday: 'long',
 					year: 'numeric',
 					month: 'long',
-					day: 'numeric'
+					day: 'numeric',
+					timeZone: 'UTC' // Specify UTC to match the T00:00:00
 				});
 			}
 		}
-
-		const d = new Date(dateStr + 'T00:00:00');
+		// Fallback for original formats if resolve failed but Date() can parse it
+		const d = new Date(dateStr);
 		if (!isNaN(d.getTime())) {
 			return d.toLocaleDateString('en-US', {
 				weekday: 'long',
@@ -104,9 +90,10 @@ export function formatDateForDisplay(dateStr: string): string {
 			});
 		}
 
-		return dateStr;
-	} catch {
-		return dateStr;
+		return dateStr; // Return original if all parsing fails
+	} catch (e) {
+		console.warn(`[formatDateForDisplay] Error parsing date "${dateStr}":`, e);
+		return dateStr; // Return original on error
 	}
 }
 
@@ -124,12 +111,21 @@ export function isBulkData(message: string): boolean {
 }
 
 /**
- * Starts the processing state and adds the user message to the conversation
+ * Sets initial processing state and adds the user message to the conversation
  */
 export function startProcessing(message: string): void {
-	conversationMessages.update((msgs) => [...msgs, { role: 'user', content: message }]);
+	// Only add user message if it's not already the last message
+	const currentMessages = get(conversationMessages);
+	if (
+		currentMessages.length === 0 ||
+		currentMessages[currentMessages.length - 1].role !== 'user' ||
+		currentMessages[currentMessages.length - 1].content !== message
+	) {
+		conversationMessages.update((msgs) => [...msgs, { role: 'user', content: message }]);
+	}
 	conversationStatus.set('Thinking...');
-	isProcessing.set(true);
+	// isProcessing is now set at the start of sendUserMessage
+	// isProcessing.set(true);
 	conversationProgress.set(10); // Small initial progress for user feedback
 }
 
@@ -143,140 +139,151 @@ export function finishProcessing(assistantResponse: string): void {
 		assistantResponse = getFallbackResponse();
 	}
 
-	conversationProgress.set(100);
+	conversationProgress.set(100); // Show completion before adding message
 	safeAddAssistantMessage(assistantResponse);
 
-	// Update initialPromptSent if needed
+	// Update initialPromptSent if needed and if response looks like a transaction confirmation
 	if (!initialPromptSent && textLooksLikeTransaction(assistantResponse)) {
 		setState({ initialPromptSent: true });
 	}
 
-	isProcessing.set(false);
-
-	// Reset progress after a short delay
+	// Reset progress after a short delay for visual completion
 	setTimeout(() => {
 		conversationProgress.set(0);
+		// Only reset status if it wasn't set to Error during processing
 		if (get(conversationStatus) !== 'Error') {
 			conversationStatus.set('');
 		}
 	}, 500);
+
+	// Reset isProcessing flag *here* as this marks the end of a processing cycle
+	// unless a background task is running.
+	isProcessing.set(false);
+	console.log('[finishProcessing] Set isProcessing to false.');
 }
 
 /**
  * Handles error scenarios during processing
  */
 export function handleProcessingError(error: unknown): string {
-	console.error('[sendUserMessage] Processing error:', error);
-	conversationStatus.set('Error');
+	console.error('[handleProcessingError] Processing error:', error);
+	conversationStatus.set('Error'); // Set status to Error
 
-	if (error instanceof Error && error.message.includes('API key')) {
-		return "I can't connect to my AI services due to an authentication issue. Please check your API configuration.";
+	let message =
+		"I'm having trouble processing that. Please try again in a moment or rephrase your message with simpler language."; // Default
+
+	if (error instanceof Error) {
+		if (error.message.includes('API key') || error.message.includes('Authentication failed')) {
+			message =
+				"I can't connect to my AI services due to an authentication issue. Please check your API configuration.";
+		} else if (error.message.includes('rate limit')) {
+			message = "I've reached my usage limit. Please try again in a moment.";
+		} else if (error.message.includes('service is experiencing issues')) {
+			message = 'The AI service seems to be experiencing issues. Please try again later.';
+		} else {
+			// Include generic error message for other cases
+			message = `Sorry, an error occurred: ${error.message}. Please try again.`;
+		}
 	}
 
-	if (error instanceof Error && error.message.includes('rate limit')) {
-		return "I've reached my usage limit. Please try again in a moment.";
-	}
-
-	return "I'm having trouble processing that. Please try again in a moment or rephrase your message with simpler language.";
+	// Ensure isProcessing is reset on error
+	isProcessing.set(false);
+	console.log('[handleProcessingError] Set isProcessing to false due to error.');
+	return message;
 }
 
 /**
  * Processes the very first message if it looks like transaction data.
- * Enhanced to handle multiple transactions and provide better feedback.
+ * Returns true if handled, false otherwise.
  */
-export async function processInitialData(text: string): Promise<void> {
+export async function processInitialData(text: string): Promise<{ handled: boolean }> {
 	conversationProgress.set(20);
 	conversationStatus.set('Analyzing initial data...');
-	let assistantResponse = '';
+	let assistantResponse = ''; // Use assistantResponse consistently
 	let success = false;
+	let handledState = false; // Track if this function handles the message
 	const today = new Date().toISOString().split('T')[0];
 
 	try {
 		const transactions = await extractTransactionsFromText(text);
+		const extractedCount = transactions.length;
 
-		if (transactions && transactions.length > 0) {
+		if (extractedCount > 0) {
+			handledState = true; // We are handling this message
 			extractedTransactions.update((txns) => [...txns, ...transactions]);
 			conversationProgress.set(80);
 
-			// Check if any transactions are incomplete
-			const incompleteTransactions = transactions.filter(
-				(t) =>
-					t.description === 'unknown' ||
-					t.date === 'unknown' ||
-					t.amount === 0 ||
-					t.direction === 'unknown'
-			);
+			const unknownDirectionTxns = transactions.filter((t) => t.direction === 'unknown');
 
-			if (incompleteTransactions.length > 0) {
-				// Get AI help to formulate questions about the incomplete data
-				const clarPrompt = `
-          The user provided transaction information, but ${incompleteTransactions.length} out of ${transactions.length} transactions have missing information. 
-          Ask focused questions to get ONLY the missing details. Be specific about which transaction you're asking about.
-        `;
+			if (unknownDirectionTxns.length > 0) {
+				// Generate clarification question
+				let clarificationQuestion = `Okay, I recorded ${extractedCount} transaction(s). For ${unknownDirectionTxns.length === 1 ? 'one' : 'some'} of these, could you tell me if the money was coming IN or going OUT?\n`;
+				unknownDirectionTxns.slice(0, 3).forEach((t) => {
+					// Access transaction ID correctly (assuming it exists on type Transaction)
+					clarificationQuestion += `- ${t.date} / ${t.description} / ${formatCurrency(t.amount)}\n`;
+				});
+				if (unknownDirectionTxns.length > 3) {
+					clarificationQuestion += `- ...and ${unknownDirectionTxns.length - 3} more.\n`;
+				}
+				clarificationQuestion += `\nYou can say something like "the first was IN, the rest were OUT".`;
 
-				const visibleMsgs = get(conversationMessages);
-				const clarMessages = [
-					{ role: 'system', content: getSystemPrompt(today) },
-					...visibleMsgs,
-					{ role: 'system', content: clarPrompt }
-				];
-
-				assistantResponse = await deepseekChat(clarMessages);
+				// Use setState to update the state correctly
+				setState({
+					waitingForDirectionClarification: true,
+					clarificationTxnIds: unknownDirectionTxns.map((t) => t.id)
+				});
+				assistantResponse = clarificationQuestion;
 			} else {
-				// If all transactions are complete, generate a success message
-				if (transactions.length === 1) {
-					// Single complete transaction
-					const { amount, description, date } = transactions[0];
+				// All transactions have known directions, generate standard confirmation
+				if (extractedCount === 1) {
+					const txn = transactions[0];
 					const amtNum =
-						typeof amount === 'string' ? parseFloat(amount.replace(/[$,]/g, '')) : amount;
-					const direction = transactions[0].direction === 'in' ? 'received' : 'spent';
-
-					assistantResponse = `Got it! I've recorded $${amtNum.toFixed(2)} ${direction} ${
-						description !== 'unknown' ? `for "${description}" ` : ''
-					}on ${formatDateForDisplay(date)}. Anything else you'd like to add?`;
+						typeof txn.amount === 'string'
+							? parseFloat(txn.amount.replace(/[$,]/g, ''))
+							: txn.amount;
+					const directionDisplay = txn.direction === 'in' ? 'received' : 'spent';
+					assistantResponse = `Got it! I've recorded ${formatCurrency(amtNum)} ${directionDisplay} ${txn.description !== 'unknown' ? `for "${txn.description}" ` : ''}${txn.date !== 'unknown' ? `on ${formatDateForDisplay(txn.date)}` : ''}. Anything else you'd like to add?`;
 				} else {
-					// Multiple complete transactions
-					assistantResponse = `Great! I've recorded ${transactions.length} transactions:\n\n`;
-
-					transactions.forEach((txn, index) => {
+					assistantResponse = `Great! I've recorded ${extractedCount} transactions:\n\n`;
+					const maxToList = 5;
+					transactions.slice(0, maxToList).forEach((txn, index) => {
 						const amtNum =
 							typeof txn.amount === 'string'
 								? parseFloat(txn.amount.replace(/[$,]/g, ''))
 								: txn.amount;
-						const direction = txn.direction === 'in' ? 'received' : 'spent';
-
-						assistantResponse += `${index + 1}. $${amtNum.toFixed(2)} ${direction} ${
-							txn.description !== 'unknown' ? `for "${txn.description}" ` : ''
-						}on ${formatDateForDisplay(txn.date)}\n`;
+						const directionDisplay = txn.direction === 'in' ? 'received' : 'spent';
+						assistantResponse += `${index + 1}. ${formatCurrency(amtNum)} ${directionDisplay} ${txn.description !== 'unknown' ? `for "${txn.description}" ` : ''}${txn.date !== 'unknown' ? `on ${formatDateForDisplay(txn.date)}` : ''}\n`;
 					});
-
+					if (extractedCount > maxToList) {
+						assistantResponse += `...and ${extractedCount - maxToList} more.\n`;
+					}
 					assistantResponse += '\nWould you like to add more transactions?';
 				}
 			}
-
-			success = true;
+			success = true; // Mark as successful extraction
 		} else {
-			assistantResponse =
-				"I couldn't identify any clear transaction details in your message. Could you try again with more specific information about amounts, dates, and what each transaction was for?";
-			success = false;
+			// Extraction failed, but text looked like transaction initially.
+			// Let sendUserMessage fall back to getNormalResponse.
+			handledState = false; // Don't handle it here, let normal response try
+			console.log('[processInitialData] Text looked like transaction, but no details extracted.');
 		}
-
-		safeAddAssistantMessage(assistantResponse);
 	} catch (err) {
+		// Handle errors during extraction
+		handledState = true; // We attempted to handle it but failed
 		console.error('[processInitialData] Error:', err);
-		safeAddAssistantMessage(
-			'I encountered an error while processing your transaction data. Could you try again with a simpler description?'
-		);
-		conversationStatus.set('Error');
+		assistantResponse = handleProcessingError(err); // Use error handler
 		success = false;
 	} finally {
-		conversationProgress.set(100);
-		setTimeout(() => {
+		// Only finish processing if this handler actually handled the message
+		if (handledState) {
+			setState({ initialPromptSent: success });
+			finishProcessing(assistantResponse); // Calls safeAddAssistantMessage and resets state
+		} else {
+			// If not handled, reset progress/status set at the start of this function
+			// so the next handler starts fresh. isProcessing is reset by sendUserMessage.
 			conversationProgress.set(0);
-			conversationStatus.set(get(conversationStatus) === 'Error' ? 'Error' : '');
-		}, 800);
-
-		setState({ initialPromptSent: success });
-		isProcessing.set(false);
+			conversationStatus.set('');
+		}
 	}
+	return { handled: handledState }; // Return whether it was handled
 }

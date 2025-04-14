@@ -1,4 +1,4 @@
-// src/lib/services/ai/store.ts (NEW FILE)
+// src/lib/services/ai/store.ts
 // --------------------------------------
 import { writable } from 'svelte/store';
 import type { Transaction } from '$lib/types';
@@ -12,31 +12,27 @@ export const extractedTransactions = writable<Transaction[]>([]);
 export const userMood = writable<'neutral' | 'frustrated' | 'chatty' | 'unknown'>('unknown');
 
 // --- State management ---
-let initialPromptSent = false;
-let messageInProgress = false;
-let messageStartTime: number = 0; // Track message processing time
+// Internal state variables managed by getState/setState
+let internalState = {
+    initialPromptSent: false,
+    messageInProgress: false,
+    messageStartTime: 0,
+    waitingForDirectionClarification: false,
+    clarificationTxnIds: [] as string[], // Store IDs of txns needing clarification (Use string for UUID)
+    // --- NEW: Store last input that resulted in extractions ---
+    lastInputTextForTransactions: '' as string,
+    lastTransactionBatchId: null as string | null // Optional: Group transactions by batch
+};
 
-// Expose state variables to handlers
-export const getState = () => ({
-	initialPromptSent,
-	messageInProgress,
-	messageStartTime
-});
 
+// Expose state variables to handlers via a getter function
+export const getState = () => ({ ...internalState }); // Return a copy
+
+// Update state via a setter function
 export const setState = (
-	newState: Partial<{
-		initialPromptSent: boolean;
-		messageInProgress: boolean;
-		messageStartTime: number;
-	}>
+	newState: Partial<typeof internalState>
 ) => {
-	if (newState.initialPromptSent !== undefined) {
-		initialPromptSent = newState.initialPromptSent;
-	}
-	if (newState.messageInProgress !== undefined) {
-		messageInProgress = newState.messageInProgress;
-	}
-	if (newState.messageStartTime !== undefined) {
-		messageStartTime = newState.messageStartTime;
-	}
+    internalState = { ...internalState, ...newState };
+    // Optional: Log state changes for debugging
+    // console.log('[AI Store] State updated:', internalState);
 };

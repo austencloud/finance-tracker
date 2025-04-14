@@ -11,7 +11,7 @@ export type Category =
 	| 'Other / Uncategorized';
 
 export interface Transaction {
-	id: number;
+	id: string;
 	date: string;
 	description: string;
 	type: string;

@@ -4,8 +4,8 @@
 	import { loading, showSuccessMessage } from '$lib/stores/uiStore';
 	import { addTransactions } from '$lib/stores/transactionStore';
 	import { parseTransactionData, getSampleData } from '$lib/services/parser';
-	import { isLLMAvailable } from '$lib/services/ai';
 	import type { Transaction } from '$lib/types';
+	import { isLLMAvailable } from '$lib/services/ai/deepseek-client';
 
 	// Input Mode State
 	type InputMode = 'standard' | 'aiChat';

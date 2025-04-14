@@ -6,6 +6,7 @@
 		transactions,
 		categories,
 		deleteTransaction,
+		updateTransaction, // Add updateTransaction import
 		selectedTransaction,
 		showTransactionDetails,
 		currentCategory
@@ -51,13 +52,13 @@
 							>
 								${parseFloat(transaction.amount.toString().replace(/[$,]/g, '')).toFixed(2)}
 							</span>
-						</td>
 						<td>
 							<select
 								bind:value={transaction.category}
-								on:change={() => deleteTransaction(transaction.id)}
+								on:change={() => updateTransaction(transaction)}
 							>
 								{#each categories as category}
+									<option value={category}>{category}</option>
 									<option value={category}>{category}</option>
 								{/each}
 							</select>
