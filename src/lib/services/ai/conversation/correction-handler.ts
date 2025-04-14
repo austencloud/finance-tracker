@@ -1,8 +1,8 @@
 // src/lib/services/ai/conversation/correction-handler.ts
 import { get } from 'svelte/store';
-import { extractTransactionsFromText } from '../extraction';
 import { extractedTransactions } from '../conversation';
 import { CORRECTION_REGEX } from './constants';
+import { extractTransactionsFromText } from '../extraction/orchestrator';
 
 /**
  * Processes possible transaction corrections based on the assistant's response

@@ -14,17 +14,20 @@ export const userMood = writable<'neutral' | 'frustrated' | 'chatty' | 'unknown'
 // --- State management ---
 let initialPromptSent = false;
 let messageInProgress = false;
+let messageStartTime: number = 0; // Track message processing time
 
 // Expose state variables to handlers
 export const getState = () => ({
 	initialPromptSent,
-	messageInProgress
+	messageInProgress,
+	messageStartTime
 });
 
 export const setState = (
 	newState: Partial<{
 		initialPromptSent: boolean;
 		messageInProgress: boolean;
+		messageStartTime: number;
 	}>
 ) => {
 	if (newState.initialPromptSent !== undefined) {
@@ -32,5 +35,8 @@ export const setState = (
 	}
 	if (newState.messageInProgress !== undefined) {
 		messageInProgress = newState.messageInProgress;
+	}
+	if (newState.messageStartTime !== undefined) {
+		messageStartTime = newState.messageStartTime;
 	}
 };

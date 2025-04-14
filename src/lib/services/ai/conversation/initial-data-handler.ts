@@ -1,7 +1,7 @@
 // src/lib/services/ai/conversation/initial-data-handler.ts
 import { textLooksLikeTransaction } from '$lib/utils/helpers';
 import { getState } from '../conversation';
-import { isBulkData, processInitialData } from './helpers';
+import { isBulkData, processInitialData } from './conversation-helpers';
 
 /**
  * Handles the initial data processing for a first-time transaction message

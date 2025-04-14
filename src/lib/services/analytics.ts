@@ -1,6 +1,6 @@
 // src/lib/services/analytics.ts
 import type { Transaction } from '$lib/types';
-import { isLLMAvailable } from './ai/llm-client';
+import { deepseekChat, isLLMAvailable } from './ai/deepseek-client';
 
 /**
  * Process financial calculations using the LLM
@@ -103,37 +103,23 @@ async function getLLMAnalysis(transactions: Transaction[], stats: any) {
     Format your response as a JSON object with a single "analysis" field containing the analysis text.
     `;
 
-		const response = await fetch('http://localhost:11434/api/generate', {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json'
-			},
-			body: JSON.stringify({
-				model: 'llama3',
-				prompt: prompt,
-				stream: false
-			})
-		});
-
-		if (!response.ok) {
-			throw new Error(`LLM API error: ${response.status}`);
-		}
-
-		const data = await response.json();
-		const llmResponse = data.response;
+		// Use DeepSeek API instead of local Ollama
+		const response = await deepseekChat([{ role: 'user', content: prompt }]);
 
 		// Extract JSON from response
-		const jsonMatch = llmResponse.match(/\{[\s\S]*\}/);
+		const jsonMatch = response.match(/\{[\s\S]*\}/);
 		if (jsonMatch) {
 			try {
 				const parsedJson = JSON.parse(jsonMatch[0]);
 				return parsedJson.analysis || 'Analysis not available.';
 			} catch (e) {
-				return 'Unable to parse analysis from LLM.';
+				// If we can't parse JSON, return the raw response
+				return response;
 			}
 		}
 
-		return 'Analysis not available.';
+		// Return the raw response if no JSON is found
+		return response || 'Analysis not available.';
 	} catch (error) {
 		console.error('Error getting LLM analysis:', error);
 		return 'Analysis not available due to an error.';
@@ -184,31 +170,16 @@ export async function detectAnomalies(transactions: Transaction[]) {
     Format your response as a JSON object with an "anomalies" array containing objects with "index", "reason", and "risk" fields.
     `;
 
-		const response = await fetch('http://localhost:11434/api/generate', {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json'
-			},
-			body: JSON.stringify({
-				model: 'llama3',
-				prompt: prompt,
-				stream: false
-			})
-		});
-
-		if (!response.ok) {
-			throw new Error(`LLM API error: ${response.status}`);
-		}
-
-		const data = await response.json();
-		const llmResponse = data.response;
+		// Use DeepSeek API instead of local Ollama
+		const response = await deepseekChat([{ role: 'user', content: prompt }]);
 
 		// Extract JSON from response
-		const jsonMatch = llmResponse.match(/\{[\s\S]*\}/);
+		const jsonMatch = response.match(/\{[\s\S]*\}/);
 		if (jsonMatch) {
 			try {
 				return JSON.parse(jsonMatch[0]);
 			} catch (e) {
+				console.error('Error parsing anomalies JSON:', e);
 				return { anomalies: [] };
 			}
 		}

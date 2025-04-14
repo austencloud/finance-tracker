@@ -1,11 +1,8 @@
-// src/lib/services/ai/conversation.ts (MODIFIED)
-// --------------------------------------
+// src/lib/services/ai/conversation.ts
 import { get } from 'svelte/store';
 import type { Transaction } from '$lib/types';
-import { ollamaChat } from './llm-client';
+import { deepseekChat, getFallbackResponse } from './deepseek-client';
 import { getSystemPrompt, getSummaryPrompt } from './prompts';
-import { extractTransactionsFromText } from './extraction';
-import { textLooksLikeTransaction } from '$lib/utils/helpers';
 
 // Import stores
 import {
@@ -17,11 +14,9 @@ import {
 	userMood,
 	getState,
 	setState
-} from './store'; // <-- CHANGE HERE
+} from './store';
 
 // Import handler modules
-
-
 import {
 	isBulkData,
 	startProcessing,
@@ -30,7 +25,7 @@ import {
 	formatDateForDisplay,
 	safeAddAssistantMessage,
 	processInitialData
-} from './conversation/helpers';
+} from './conversation/conversation-helpers';
 import { handleCorrection } from './conversation/correction-handler';
 import { extractNewTransaction } from './conversation/extraction-handler';
 import { getNormalResponse } from './conversation/normal-response-handler';
@@ -82,17 +77,40 @@ export function abortConversation(): void {
 	resetConversationState();
 }
 
-// --- Main Message Handler ---
+// Add this import to the top of your file:
+import { startBackgroundProcessing } from './conversation/bulk-data-handler';
+
+/**
+ * Improved main message handler that delegates large bank statements to background processing
+ */
 export async function sendUserMessage(message: string): Promise<void> {
 	if (get(isProcessing)) {
 		console.warn('[sendUserMessage] Already processing. Ignored:', message);
 		return;
 	}
 
+	if (!message || message.trim().length === 0) {
+		console.warn('[sendUserMessage] Empty message. Ignored.');
+		return;
+	}
+
+	// Start processing
 	startProcessing(message);
 	let assistantResponse = '';
 
 	try {
+		// FAST PATH: Check if this is a large bank statement and process in background
+		// This makes the UI feel much more responsive
+		if (isBankStatement(message) && message.length > 1000) {
+			const result = startBackgroundProcessing(message);
+			if (result.handled) {
+				assistantResponse = result.response;
+				finishProcessing(assistantResponse);
+				return;
+			}
+		}
+
+		// NORMAL PATH: Continue with standard processing for non-bank statements
 		// 1. Check for mood indicators
 		const moodResult = handleUserMood(message);
 		if (moodResult.handled) {
@@ -120,7 +138,7 @@ export async function sendUserMessage(message: string): Promise<void> {
 		if (detailsResult.handled) {
 			assistantResponse = detailsResult.response;
 		}
-		// 5. Try to extract a new transaction
+		// 5. Try to extract transactions
 		else {
 			const extractionResult = await extractNewTransaction(message);
 			if (extractionResult.handled) {
@@ -145,7 +163,25 @@ export async function sendUserMessage(message: string): Promise<void> {
 }
 
 /**
+ * Checks if a message appears to be a bank statement
+ */
+function isBankStatement(message: string): boolean {
+	// Check for common bank statement format indicators
+	const hasDates =
+		/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},\s+\d{4}\b|\b\d{1,2}\/\d{1,2}\/\d{4}\b/i.test(
+			message
+		);
+	const hasDollarAmounts = /\$\s*[\d,]+\.\d{2}/i.test(message);
+	const hasBankingTerms =
+		/\b(transfer|deposit|credit|debit|withdrawal|payment|ppd|id:|card)\b/i.test(message);
+
+	// Must have dates, dollar amounts, and banking terms
+	return hasDates && hasDollarAmounts && hasBankingTerms;
+}
+
+/**
  * Generates a summary message based on currently extracted transactions.
+ * Enhanced with improved error handling.
  */
 export async function generateSummary(): Promise<void> {
 	if (get(isProcessing)) {
@@ -155,7 +191,9 @@ export async function generateSummary(): Promise<void> {
 
 	const txns = get(extractedTransactions);
 	if (txns.length === 0) {
-		safeAddAssistantMessage("I haven't recorded any transactions yet...");
+		safeAddAssistantMessage(
+			"I haven't recorded any transactions yet. Please share some transaction details with me first."
+		);
 		return;
 	}
 
@@ -171,14 +209,58 @@ export async function generateSummary(): Promise<void> {
 			{ role: 'user', content: promptContent }
 		];
 
-		summaryResponse = await ollamaChat(summaryMsgs);
+		// Try to get a response with retries
+		let retries = 2;
+		let error = null;
+
+		while (retries >= 0 && !summaryResponse) {
+			try {
+				summaryResponse = await deepseekChat(summaryMsgs);
+				break;
+			} catch (err) {
+				error = err;
+				retries--;
+				console.log(`[generateSummary] Error, retries left: ${retries}`, err);
+				// Wait before retrying
+				if (retries >= 0) {
+					await new Promise((resolve) => setTimeout(resolve, 1000));
+				}
+			}
+		}
+
+		// If we still have no response after retries, create a fallback
+		if (!summaryResponse && error) {
+			console.error('[generateSummary] Failed after retries:', error);
+
+			// Create a simple fallback summary
+			summaryResponse = `Here's a summary of your ${txns.length} transactions:\n\n`;
+
+			// Group by category
+			const categorySums: Record<string, number> = {};
+			txns.forEach((txn) => {
+				const category = txn.category;
+				const amount =
+					typeof txn.amount === 'string' ? parseFloat(txn.amount.replace(/[$,]/g, '')) : txn.amount;
+
+				if (!categorySums[category]) categorySums[category] = 0;
+				categorySums[category] += amount;
+			});
+
+			// Add category totals
+			Object.entries(categorySums).forEach(([category, total]) => {
+				summaryResponse += `${category}: $${total.toFixed(2)}\n`;
+			});
+
+			summaryResponse +=
+				"\nI'm having some issues generating a detailed analysis. Would you like to add these transactions to your main list?";
+		}
 
 		if (!summaryResponse || !summaryResponse.trim()) {
-			summaryResponse = `Okay, I have ${txns.length} transaction(s) recorded...`;
+			summaryResponse = `I have recorded ${txns.length} transaction(s). Would you like to add them to your main list or make any changes?`;
 		}
 	} catch (err) {
 		console.error('[generateSummary] LLM error:', err);
-		summaryResponse = `Sorry, I encountered an error generating the summary...`;
+		summaryResponse = `I have ${txns.length} transaction(s) recorded. Would you like to add them to your main list?`;
 		conversationStatus.set('Error');
 	} finally {
 		safeAddAssistantMessage(summaryResponse);
@@ -187,7 +269,7 @@ export async function generateSummary(): Promise<void> {
 	}
 }
 
-
+// Export helper functions
 export {
 	safeAddAssistantMessage,
 	formatDateForDisplay,

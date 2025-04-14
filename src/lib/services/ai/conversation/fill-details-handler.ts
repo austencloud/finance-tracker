@@ -4,7 +4,7 @@ import type { Transaction } from '$lib/types';
 import { resolveAndFormatDate } from '$lib/utils/date';
 import { parseCurrency } from '$lib/utils/currency';
 import { conversationMessages, extractedTransactions } from '../conversation';
-import { formatDateForDisplay } from './helpers';
+import { formatDateForDisplay } from './conversation-helpers';
 import {
 	DESCRIPTION_QUESTION_REGEX,
 	DATE_QUESTION_REGEX,
