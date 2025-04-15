@@ -126,16 +126,16 @@
 						</div>
 					</div>
 
-					{#if summary.analysis && llmAvailable}
+					<!-- {#if summary.analysis && llmAvailable}
 						<div class="ai-analysis">
 							<h4>AI Analysis</h4>
 							<p>{summary.analysis}</p>
 						</div>
-					{:else if !llmAvailable}
+					{:else if !llmAvailable} -->
 						<div class="llm-notice">
 							<p>Enable the AI features to get personalized financial analysis.</p>
 						</div>
-					{/if}
+					<!-- {/if} -->
 				</div>
 			{/if}
 
@@ -303,11 +303,11 @@
 		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 	}
 
-	.ai-analysis h4 {
+	/* .ai-analysis h4 {
 		margin-top: 0;
 		color: #3498db;
 		margin-bottom: 10px;
-	}
+	} */
 
 	.llm-notice {
 		background-color: #eaf2f8;

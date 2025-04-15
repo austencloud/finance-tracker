@@ -2,9 +2,10 @@
 	import { appStore } from '$lib/stores/AppStore';
 	import type { Transaction, Category, SortField } from '$lib/stores/types';
 	import { onDestroy } from 'svelte';
-	import { derived } from 'svelte/store'; // *** Import derived ***
+	// --- Re-add derived import ---
+	import { derived } from 'svelte/store';
 
-	// --- Local Helper Functions ---
+	// --- Local Helper Functions (remain the same) ---
 	function formatCurrency(amount: number | string): string {
 		const num = typeof amount === 'string' ? parseFloat(amount.replace(/[$,]/g, '')) : amount;
 		if (isNaN(num)) {
@@ -24,103 +25,15 @@
 		appStore.selectTransactionForDetails(transactionId);
 	}
 
-	// --- Reactive Derived Store ---
-	// Create a derived store that automatically recalculates when appStore changes.
-	// This replicates the logic from appStore.getSortedFilteredTransactions
+	// --- Use derived store calling the selector ---
+	// This explicitly tells Svelte: "This value depends on appStore".
+	// When appStore changes, Svelte re-runs this function.
 	const sortedFilteredTransactions = derived(appStore, ($appStore) => {
-		console.log('[ExtractedDataDisplay derived] Recalculating derived store...'); // Debug log
-		const { transactions, filters } = $appStore;
-
-		// Filtering Logic
-		let filtered = transactions; // Start with all transactions
-		// Filter by Category
-		if (filters.category !== 'all') {
-			filtered = transactions.filter((t) => t.category === filters.category);
-		}
-		// Filter by Search Term
-		if (filters.searchTerm) {
-			const term = filters.searchTerm.toLowerCase();
-			filtered = filtered.filter(
-				(t) =>
-					(t.description || '').toLowerCase().includes(term) ||
-					(t.date || '').toLowerCase().includes(term) ||
-					(t.notes || '').toLowerCase().includes(term) ||
-					(t.category || '').toLowerCase().includes(term) ||
-					(t.type || '').toLowerCase().includes(term)
-			);
-		}
-
-		// Sorting Logic
-		// Use [...filtered] to create a shallow copy before sorting, preventing mutation of the filtered array
-		const sorted = [...filtered].sort((a, b) => {
-			let valueA: any, valueB: any;
-			const field = filters.sortField as keyof Transaction; // Type assertion
-
-			// Handle specific sorting logic for date and amount
-			switch (field) {
-				case 'amount':
-					valueA = a.amount ?? 0; // Use nullish coalescing for safety
-					valueB = b.amount ?? 0;
-					break;
-				case 'date':
-					// Attempt to parse dates for comparison, fallback to string compare if invalid
-					try {
-						// Add T00:00:00 to avoid timezone issues during comparison
-						const dateA = new Date(a.date + 'T00:00:00').getTime();
-						const dateB = new Date(b.date + 'T00:00:00').getTime();
-						// Treat invalid dates as 0 for sorting purposes, or use string comparison as fallback
-						valueA = isNaN(dateA) ? (a.date === 'unknown' ? -Infinity : a.date) : dateA;
-						valueB = isNaN(dateB) ? (b.date === 'unknown' ? -Infinity : b.date) : dateB;
-						// If both are invalid dates, compare as strings
-						if (typeof valueA === 'string' && typeof valueB === 'string') {
-							// Standard string comparison
-						} else if (typeof valueA !== 'number') {
-							// Place invalid dates first/last consistently
-							return filters.sortDirection === 'asc' ? -1 : 1;
-						} else if (typeof valueB !== 'number') {
-							return filters.sortDirection === 'asc' ? 1 : -1;
-						}
-					} catch {
-						// Fallback to string comparison on any parsing error
-						valueA = a.date;
-						valueB = b.date;
-					}
-					break;
-				case 'description':
-				case 'category':
-				case 'type':
-				case 'direction':
-				case 'notes':
-				case 'id':
-					valueA = (a[field] || '').toLowerCase();
-					valueB = (b[field] || '').toLowerCase();
-					break;
-				default:
-					// Fallback for any other potential fields (though unlikely with defined SortField type)
-					valueA = a[field];
-					valueB = b[field];
-			}
-
-			// Comparison logic
-			const comparison = valueA < valueB ? -1 : valueA > valueB ? 1 : 0;
-			return filters.sortDirection === 'asc' ? comparison : -comparison; // Apply direction
-		});
-
-		console.log('[ExtractedDataDisplay derived] Recalculation complete. Count:', sorted.length); // Debug log
-		return sorted; // Return the final sorted and filtered array
+		// The calculation simply calls the selector method from the central store.
+		return appStore.getSortedFilteredTransactions();
 	});
 
-	// Debugging log (optional, keep if needed)
-	$: {
-		console.log(
-			'[ExtractedDataDisplay reactive block] $appStore.transactions.length:',
-			$appStore.transactions.length
-		);
-		console.log(
-			'[ExtractedDataDisplay reactive block] $sortedFilteredTransactions length:',
-			$sortedFilteredTransactions.length
-		);
-	}
+	// --- REMOVED the reactive declaration: $: sortedFilteredTransactions = ... ---
 </script>
 
 <div class="data-display-container">
