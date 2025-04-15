@@ -2,17 +2,10 @@
 	import LLMConversationLayout from './LLMConversation/LLMConversationLayout.svelte';
 	import BulkProcessingUI from '../transactions/BulkProcessingUI.svelte';
 
-	// --- CORRECTED IMPORTS ---
-	// Import derived state and actions via adapters/index
-	import {
-		loading, // Derived store for reading loading state
-		showSuccessMessage, // Derived store for reading success message state
-		addTransactions, // Action to add transactions
-		isBulkProcessing, // Derived store for reading bulk processing state
-		setLoading // Action to set loading state
-	} from '$lib/stores';
+	// --- Import appStore directly ---
+	import { appStore } from '$lib/stores/AppStore';
 
-	// Import services (assuming these are or will be refactored to use appStore internally)
+	// Import services (assuming they use appStore internally)
 	import { parseTransactionData, getSampleData } from '$lib/services/parser';
 	import { processBulkTransactions } from '$lib/services/bulkProcessingOrchestrator';
 	import { isLLMAvailable } from '$lib/services/ai/deepseek-client';
@@ -43,7 +36,6 @@
 			inputMode = 'standard';
 		}
 	};
-
 	checkLLMAvailability();
 
 	function isBulkData(text: string): boolean {
@@ -52,31 +44,30 @@
 		return lineCount > BULK_THRESHOLD_LINES || text.length > BULK_THRESHOLD_LENGTH;
 	}
 
-	// Handle form submission for standard pasting mode
+	// --- Updated Handlers using appStore ---
 	async function handleStandardSubmit(): Promise<void> {
 		if (inputText.trim()) {
 			processingError = '';
-			// --- Use setLoading Action ---
-			setLoading(true);
+			// --- Call appStore action ---
+			appStore.setLoading(true);
 
 			try {
 				if (isBulkData(inputText) && llmAvailable) {
 					console.log('Detected bulk data, using parallel processing');
-					// processBulkTransactions needs to handle its own state updates via appStore internally now
+					// Service call (assumes service interacts with appStore)
 					const success = await processBulkTransactions(inputText);
 					if (!success) {
 						processingError =
 							'There was a problem processing the bulk data. Check the results and try again if needed.';
 					}
-					// Success message is handled by appStore.finalizeBulkProcessing if transactions were added
+					// Success message handled by appStore.finalizeBulkProcessing
 				} else {
 					console.log('Using standard processing');
 					const parsedTransactions = parseTransactionData(inputText);
-					// Call the central addTransactions action
-					addTransactions(parsedTransactions);
-					// Clear input text
+					// --- Call appStore action ---
+					appStore.addTransactions(parsedTransactions);
 					inputText = '';
-					// Success message is handled by the addTransactions action in AppStore
+					// Success message handled by appStore.addTransactions
 				}
 			} catch (error) {
 				console.error('Error processing transactions:', error);
@@ -85,37 +76,36 @@
 						? `Error processing transactions: ${error.message}`
 						: 'Unknown error processing transactions';
 			} finally {
-				// --- Use setLoading Action ---
-				setLoading(false);
+				// --- Call appStore action ---
+				appStore.setLoading(false);
 			}
 		}
 	}
 
-	// Load sample data
 	function loadSampleData(): void {
-		// --- Use setLoading Action ---
-		setLoading(true);
+		// --- Call appStore action ---
+		appStore.setLoading(true);
 		try {
 			const sampleData = getSampleData();
 			const parsedTransactions = parseTransactionData(sampleData);
-			addTransactions(parsedTransactions); // Calls central action
+			// --- Call appStore action ---
+			appStore.addTransactions(parsedTransactions);
 		} catch (error) {
 			console.error('Error loading sample data:', error);
 			processingError = 'Failed to load sample data.';
 		} finally {
-			// --- Use setLoading Action ---
-			setLoading(false);
+			// --- Call appStore action ---
+			appStore.setLoading(false);
 		}
 	}
 
-	// Import data from JSON
 	function importData(event: Event): void {
 		const input = event.target as HTMLInputElement;
 		const file = input.files?.[0];
 		if (!file) return;
 
-		// --- Use setLoading Action ---
-		setLoading(true);
+		// --- Call appStore action ---
+		appStore.setLoading(true);
 		processingError = '';
 
 		const reader = new FileReader();
@@ -125,7 +115,8 @@
 				if (typeof result === 'string') {
 					const importedData = JSON.parse(result) as Transaction[];
 					if (Array.isArray(importedData)) {
-						addTransactions(importedData); // Calls central action
+						// --- Call appStore action ---
+						appStore.addTransactions(importedData);
 					} else {
 						throw new Error('Invalid JSON format. Expected an array of transactions.');
 					}
@@ -138,25 +129,23 @@
 						? 'Error importing data: ' + error.message
 						: 'Unknown error importing data';
 			} finally {
-				// --- Use setLoading Action ---
-				setLoading(false);
+				// --- Call appStore action ---
+				appStore.setLoading(false);
 			}
 		};
 		reader.onerror = () => {
 			processingError = 'Error reading the file.';
-			// --- Use setLoading Action ---
-			setLoading(false);
+			// --- Call appStore action ---
+			appStore.setLoading(false);
 		};
 		reader.readAsText(file);
-		input.value = ''; // Reset file input
+		input.value = '';
 	}
 </script>
 
-// src/lib/components/input/InputForm.svelte (Refactored Script)
 <div class="form-container">
 	<div class="header-controls">
 		<h2>Input Transaction Data</h2>
-
 		{#if llmAvailable}
 			<div class="mode-switcher">
 				<button class:active={inputMode === 'standard'} on:click={() => (inputMode = 'standard')}>
@@ -170,16 +159,14 @@
 	</div>
 
 	{#if processingError}
-		<div class="error-message">
-			{processingError}
-		</div>
+		<div class="error-message">{processingError}</div>
 	{/if}
 
-	{#if $isBulkProcessing}
+	{#if $appStore.bulkProcessing.isBulkProcessing}
 		<BulkProcessingUI />
 	{/if}
 
-	{#if inputMode === 'standard' && !$isBulkProcessing}
+	{#if inputMode === 'standard' && !$appStore.bulkProcessing.isBulkProcessing}
 		<div class="input-options">
 			<div class="option">
 				<h3>Option 1: Paste Text</h3>
@@ -189,7 +176,6 @@
 						placeholder="Paste your transaction data here (standard formats work best)..."
 						rows="10"
 					></textarea>
-
 					{#if isBulkData(inputText) && llmAvailable}
 						<div class="bulk-data-notice">
 							<p>
@@ -198,13 +184,11 @@
 							</p>
 						</div>
 					{/if}
-
-					<button type="submit" disabled={$loading}>
-						{$loading ? 'Processing...' : 'Process Pasted Text'}
+					<button type="submit" disabled={$appStore.ui.loading}>
+						{$appStore.ui.loading ? 'Processing...' : 'Process Pasted Text'}
 					</button>
 				</form>
 			</div>
-
 			<div class="option">
 				<h3>Option 2: Import/Load</h3>
 				<div class="import-export-buttons">
@@ -214,19 +198,19 @@
 							type="file"
 							accept=".json"
 							on:change={importData}
-							disabled={$loading}
-							style="display: none;"
+							disabled={$appStore.ui.loading} style="display: none;"
 						/>
 					</label>
-
-					<button on:click={loadSampleData} class="sample-data-button" disabled={$loading}>
+					<button
+						on:click={loadSampleData}
+						class="sample-data-button"
+						disabled={$appStore.ui.loading} >
 						Load Sample Data
 					</button>
 				</div>
 			</div>
 		</div>
-	{:else if inputMode === 'aiChat' && llmAvailable && !$isBulkProcessing}
-		<div class="ai-chat-container">
+	{:else if inputMode === 'aiChat' && llmAvailable && !$appStore.bulkProcessing.isBulkProcessing} <div class="ai-chat-container">
 			<LLMConversationLayout />
 		</div>
 	{/if}
@@ -238,12 +222,12 @@
 					href="https://ollama.com/"
 					target="_blank"
 					rel="noopener noreferrer">Install Ollama</a
-				>
-				and ensure it's running with a model like 'llama3' to enable AI chat and analysis.
+				> and ensure it's running with a model like 'llama3' to enable AI chat and analysis.
 			</p>
 		</div>
 	{/if}
 </div>
+
 
 <style>
 	.form-container {

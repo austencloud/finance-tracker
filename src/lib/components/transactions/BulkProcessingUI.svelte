@@ -1,42 +1,59 @@
-<!-- src/lib/components/transactions/BulkProcessingUI.svelte -->
 <script lang="ts">
-	import {
-		processingChunks,
-		processingProgress,
-		isBulkProcessing,
-		processingStats,
-		tempExtractedTransactions,
-		finalizeBulkProcessing,
-		addTransactions
-	} from '$lib/stores';
-
+	// --- Import appStore directly ---
+	import { appStore } from '$lib/stores/AppStore';
+	import { derived, get } from 'svelte/store'; // Import derived and get
 	import { tick } from 'svelte';
+	import type { Transaction } from '$lib/stores/types'; // Keep type import
 
+	// --- Recreate derived stats locally ---
+	const processingStats = derived(appStore, ($appStore) => {
+		const chunks = $appStore.bulkProcessing.processingChunks;
+		const successChunks = chunks.filter((c) => c.status === 'success').length;
+		const errorChunks = chunks.filter((c) => c.status === 'error').length;
+		const pendingChunks = chunks.filter(
+			(c) => c.status === 'pending' || c.status === 'processing'
+		).length;
+		return {
+			totalChunks: chunks.length,
+			successChunks,
+			errorChunks,
+			pendingChunks,
+			transactionCount: $appStore.bulkProcessing.tempExtractedTransactions.length,
+			isComplete: chunks.length > 0 && pendingChunks === 0
+		};
+	});
+
+
+	// Function to finalize and add all transactions
 	async function completeAndAddTransactions() {
-		const txns = $tempExtractedTransactions;
+		// Read temp transactions directly from the store state via get()
+		const txns = get(appStore).bulkProcessing.tempExtractedTransactions;
 		if (txns.length > 0) {
-			addTransactions(txns);
+			// Call actions directly on appStore
+			appStore.addTransactions(txns);
 			await tick();
-			finalizeBulkProcessing(true);
+			appStore.finalizeBulkProcessing(true);
 		}
 	}
 
+	// Function to cancel processing
 	function cancelProcessing() {
 		if (confirm('Are you sure you want to cancel processing?')) {
-			finalizeBulkProcessing(false);
+			// Call action directly on appStore
+			appStore.finalizeBulkProcessing(false);
 		}
 	}
 </script>
 
-{#if $isBulkProcessing}
+{#if $appStore.bulkProcessing.isBulkProcessing}
 	<div class="bulk-processing-container">
 		<h3>Processing Large Transaction Set</h3>
 
 		<div class="progress-header">
 			<div class="progress-bar-container">
-				<div class="progress-bar" style="width: {$processingProgress}%"></div>
+				<div class="progress-bar" style="width: {$appStore.bulkProcessing.processingProgress}%"></div>
 			</div>
-			<div class="progress-text">{$processingProgress}%</div>
+			<div class="progress-text">{$appStore.bulkProcessing.processingProgress}%</div>
 		</div>
 
 		<div class="stats-grid">
@@ -61,8 +78,7 @@
 		<div class="chunks-list">
 			<h4>Processing Status</h4>
 			<div class="chunks-container">
-				{#each $processingChunks as chunk, i}
-					<div class="chunk-item status-{chunk.status}">
+				{#each $appStore.bulkProcessing.processingChunks as chunk (chunk.id)} <div class="chunk-item status-{chunk.status}">
 						<div class="chunk-icon">
 							{#if chunk.status === 'pending'}
 								<span class="icon-pending">⏳</span>
@@ -74,15 +90,10 @@
 								<span class="icon-error">❌</span>
 							{/if}
 						</div>
-
 						<div class="chunk-content">
-							<div class="chunk-title">Chunk {i + 1}: {chunk.text}</div>
-
-							{#if chunk.status === 'success'}
+							<div class="chunk-title">Chunk {chunk.id.split('-')[1]}: {chunk.text}</div> {#if chunk.status === 'success'}
 								<div class="chunk-message success">
-									Found {chunk.transactionCount} transaction{chunk.transactionCount !== 1
-										? 's'
-										: ''}
+									Found {chunk.transactionCount} transaction{chunk.transactionCount !== 1 ? 's' : ''}
 								</div>
 							{:else if chunk.status === 'error'}
 								<div class="chunk-message error">{chunk.message || 'Processing failed'}</div>
@@ -99,19 +110,14 @@
 			{#if $processingStats.isComplete}
 				<div class="completion-notice">
 					<p>
-						Processing complete! {$processingStats.transactionCount} transactions found across {$processingStats.successChunks}
-						chunks.
+						Processing complete! {$processingStats.transactionCount} transactions found across {$processingStats.successChunks} chunks.
 					</p>
-
 					{#if $processingStats.errorChunks > 0}
 						<p class="warning">
-							Note: {$processingStats.errorChunks} chunk{$processingStats.errorChunks !== 1
-								? 's'
-								: ''} failed to process.
+							Note: {$processingStats.errorChunks} chunk{$processingStats.errorChunks !== 1 ? 's' : ''} failed to process.
 						</p>
 					{/if}
 				</div>
-
 				<button
 					class="primary-button"
 					on:click={completeAndAddTransactions}
@@ -125,6 +131,7 @@
 		</div>
 	</div>
 {/if}
+
 
 <style>
 	.bulk-processing-container {

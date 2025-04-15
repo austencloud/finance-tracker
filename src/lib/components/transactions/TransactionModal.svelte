@@ -1,24 +1,22 @@
 <script lang="ts">
+	import { derived } from 'svelte/store'; // Import derived
+	import { appStore } from '$lib/stores/AppStore'; // Import the central store
+
+	// Import services
 	import { suggestCategory } from '$lib/services/ai/category';
 	import { isLLMAvailable } from '$lib/services/ai/deepseek-client';
-	import {
-		// State (read-only derived stores via adapters)
-		showTransactionDetails,
-		selectedTransaction,
-		currentCategory, // Still needed for reading the current value
-		categories, // Import categories via adapter
 
-		// Actions (via adapters)
-		assignCategory,
-		addNotes,
-		setCurrentCategory,
-		closeTransactionDetails, // Action to update the category in the modal UI state
-	} from '$lib/stores';
+	// Import types
+	import type { Category, Transaction } from '$lib/stores/types';
 
-	// Import services (ensure they use appStore internally if needed)
-	import type { Category } from '$lib/stores/types'; // Import type
+	// --- Create local derived store for the selected transaction object ---
+	const selectedTransactionObject = derived(appStore, ($appStore) => {
+		return $appStore.ui.selectedTransactionId
+			? appStore.getTransactionById($appStore.ui.selectedTransactionId)
+			: null;
+	});
 
-	// Local component state remains the same
+	// Local component state
 	let notes = '';
 	let suggestingCategory = false;
 	let llmAvailable = false;
@@ -31,28 +29,31 @@
 			llmAvailable = false;
 		}
 	};
-	checkLLMAvailability(); // Run on component initialization
+	checkLLMAvailability();
 
-	// Update local 'notes' variable when selected transaction changes
-	$: if ($selectedTransaction) {
-		notes = $selectedTransaction.notes || '';
+	// Update local 'notes' variable when the derived selected transaction object changes
+	$: if ($selectedTransactionObject) {
+		notes = $selectedTransactionObject.notes || '';
 	} else {
-		notes = ''; // Clear notes if no transaction is selected
+		notes = '';
 	}
 
 	// Request a category suggestion from the LLM
 	async function requestCategorySuggestion() {
-		if (!$selectedTransaction || !llmAvailable) return;
+		// Use the derived object and direct store access
+		const currentTxn = $selectedTransactionObject;
+		const currentCategories = $appStore.categories; // Read directly via $
+		if (!currentTxn || !currentCategories || currentCategories.length === 0 || !llmAvailable)
+			return;
 
 		suggestingCategory = true;
 		try {
-			// suggestCategory service might need refactoring if it used old stores
-			const suggested = await suggestCategory($selectedTransaction, $categories);
-			// --- Use Action to update state ---
-			setCurrentCategory(suggested);
+			// Pass the actual transaction object and categories array
+			const suggested = await suggestCategory(currentTxn, currentCategories);
+			// Call action to update modal's category state
+			appStore.setModalCategory(suggested);
 		} catch (error) {
 			console.error('Error getting category suggestion:', error);
-			// Optionally notify the user
 		} finally {
 			suggestingCategory = false;
 		}
@@ -61,55 +62,62 @@
 	// Handler for when the select element changes
 	function handleCategoryChange(event: Event) {
 		const target = event.target as HTMLSelectElement;
-		// --- Use Action to update state ---
-		setCurrentCategory(target.value as Category);
+		// Call action to update modal's category state
+		appStore.setModalCategory(target.value as Category);
 	}
 
-	// Handler for saving category (uses imported action)
+	// Handler for saving category
 	function handleUpdateCategory() {
-		if ($selectedTransaction) {
-			// assignCategory adapter expects (transaction, category)
-			assignCategory($selectedTransaction, $currentCategory);
-			// Optionally close modal after update, or show success
-			// closeTransactionDetails();
+		const currentTxnId = $appStore.ui.selectedTransactionId;
+		const modalCategory = $appStore.ui.currentCategory; // Read current category from store
+		if (currentTxnId) {
+			// Call action with ID and category from store state
+			appStore.assignCategory(currentTxnId, modalCategory);
 		}
 	}
 
-	// Handler for saving notes (uses imported action)
+	// Handler for saving notes
 	function handleSaveNotes() {
-		if ($selectedTransaction) {
-			// addNotes adapter expects (transaction, notes)
-			addNotes($selectedTransaction, notes);
-			// Optionally close modal after update, or show success
-			// closeTransactionDetails();
+		const currentTxnId = $appStore.ui.selectedTransactionId;
+		if (currentTxnId) {
+			// Call action with ID and local notes variable
+			appStore.addNotes(currentTxnId, notes);
 		}
+	}
+
+	// Function to close the modal (for clarity, could call directly)
+	function closeModal() {
+		appStore.closeTransactionDetails();
 	}
 </script>
 
-{#if $showTransactionDetails && $selectedTransaction}
+{#if $appStore.ui.showTransactionDetails && $selectedTransactionObject}
 	<div
 		class="modal-backdrop"
 		role="button"
 		tabindex="0"
-		on:click|self={closeTransactionDetails}
+		on:click|self={closeModal}
 		on:keydown={(e) => {
-			if (e.key === 'Enter' || e.key === ' ') {
-				closeTransactionDetails();
+			if (e.key === 'Escape') {
+				// Use Escape key
+				closeModal();
 			}
 		}}
 	>
 		<div class="modal-content">
 			<h3>Transaction Details</h3>
 			<div class="transaction-details">
-				<p><strong>Date:</strong> {$selectedTransaction.date}</p>
-				<p><strong>Description:</strong> {$selectedTransaction.description}</p>
-				<p><strong>Type:</strong> {$selectedTransaction.type}</p>
+				<p><strong>Date:</strong> {$selectedTransactionObject.date}</p>
+				<p><strong>Description:</strong> {$selectedTransactionObject.description}</p>
+				<p><strong>Type:</strong> {$selectedTransactionObject.type}</p>
 				<p>
 					<strong>Amount:</strong>
 					<span
-						class={$selectedTransaction.direction === 'out' ? 'expense-amount' : 'income-amount'}
+						class={$selectedTransactionObject.direction === 'out'
+							? 'expense-amount'
+							: 'income-amount'}
 					>
-						${Math.abs($selectedTransaction.amount).toFixed(2)}
+						${Math.abs($selectedTransactionObject.amount).toFixed(2)}
 					</span>
 				</p>
 
@@ -117,8 +125,8 @@
 					<label>
 						<strong>Category:</strong>
 						<div class="category-controls">
-							<select value={$currentCategory} on:change={handleCategoryChange}>
-								{#each $categories as category (category)}
+							<select value={$appStore.ui.currentCategory} on:change={handleCategoryChange}>
+								{#each $appStore.categories as category (category)}
 									<option value={category}>{category}</option>
 								{/each}
 							</select>
@@ -140,13 +148,14 @@
 				<div class="notes-section">
 					<label>
 						<strong>Notes:</strong>
-						<textarea bind:value={notes} placeholder="Add notes about this transaction..." rows="3"></textarea>
+						<textarea bind:value={notes} placeholder="Add notes about this transaction..." rows="3"
+						></textarea>
 					</label>
 					<button on:click={handleSaveNotes}> Save Notes </button>
 				</div>
 			</div>
 
-			<button class="close-button" on:click={closeTransactionDetails}> Close </button>
+			<button class="close-button" on:click={closeModal}> Close </button>
 		</div>
 	</div>
 {/if}

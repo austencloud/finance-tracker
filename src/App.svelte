@@ -2,37 +2,47 @@
 	import LLMWithDataLayout from '$lib/components/input/LLMConversation/LLMWithDataLayout.svelte';
 	import { onMount } from 'svelte';
 
-	// Import needed derived stores & actions via adapters/index
-	import {
-		transactions,
-		clearTransactions,
-		isProcessing,
-		categories // <-- IMPORT categories store
-	} from '$lib/stores';
+	// --- REMOVE Adapter Imports ---
+	// import {
+	// 	transactions,
+	// 	clearTransactions,
+	// 	isProcessing,
+	// 	categories
+	// } from '$lib/stores';
 
-	// Import appStore directly for the selector method
+	// --- USE Direct appStore Import ---
 	import { appStore } from '$lib/stores/AppStore';
+	import { get } from 'svelte/store'; // Import get if needed for non-reactive reads
 
 	// Import services
 	import { exportAsJson, generateHTMLReport } from '$lib/services/exporter';
+	// Assuming 'initialize' uses appStore internally now
 	import { initialize } from '$lib/services/ai/conversation/conversationService';
 
 	onMount(() => {
+		// Call service function (assumes it interacts with appStore)
 		initialize();
 	});
 
-	// Updated handler for report generation
+	// Updated handler for report generation using direct store access
 	function handleGenerateReport() {
-		const currentTotals = appStore.getCategoryTotals();
-		// Pass the categories array value ($categories)
-		generateHTMLReport($transactions, currentTotals, $categories);
+		// Read state directly using get() or rely on $appStore in template calls
+		const currentTransactions = get(appStore).transactions; // Or use $appStore.transactions below
+		const currentCategories = get(appStore).categories; // Or use $appStore.categories below
+		const currentTotals = appStore.getCategoryTotals(); // Call selector method
+
+		// Pass the actual arrays/objects
+		generateHTMLReport(currentTransactions, currentTotals, currentCategories);
 	}
+
+	// Optional: If you need reactive updates *within the script*
+	// $: console.log('AI Processing (direct):', $appStore.conversation.isProcessing);
 </script>
 
 <main class="page-container">
 	<h1>AI Transaction Entry</h1>
 
-	{#if $isProcessing}
+	{#if $appStore.conversation.isProcessing}
 		<div class="processing-indicator">AI Assistant is working...</div>
 	{/if}
 
@@ -41,22 +51,25 @@
 	<div class="global-actions">
 		<h2>Global Actions (Main List)</h2>
 		<button
-			on:click={() => exportAsJson($transactions)}
-			disabled={$transactions.length === 0}
+			on:click={() => exportAsJson($appStore.transactions)}
+			disabled={$appStore.transactions.length === 0 &&
+				$appStore.conversation.extractedTransactions.length === 0}
 			class="action-button export-action"
 		>
 			Export JSON (All)
 		</button>
 		<button
 			on:click={handleGenerateReport}
-			disabled={$transactions.length === 0}
+			disabled={$appStore.transactions.length === 0 &&
+				$appStore.conversation.extractedTransactions.length === 0}
 			class="action-button primary-action"
 		>
 			Generate HTML Report (All)
 		</button>
 		<button
-			on:click={clearTransactions}
-			disabled={$transactions.length === 0}
+			on:click={appStore.clearTransactions}
+			disabled={$appStore.transactions.length === 0 &&
+				$appStore.conversation.extractedTransactions.length === 0}
 			class="action-button danger-action"
 		>
 			Clear All Transactions

@@ -1,19 +1,36 @@
 <script lang="ts">
-	// Imports are correct - they use the adapters from $lib/stores
-	import { transactions, filterCategory, searchTerm, categories } from '$lib/stores';
-	import type { Category } from '$lib/stores/types'; // Import Category type if needed
+	// --- Import appStore directly ---
+	import { appStore } from '$lib/stores/AppStore';
+	import type { Category } from '$lib/stores/types'; // Keep type import
+
+	// Helper function for type safety with event target value
+	function handleSearchInput(event: Event) {
+		const target = event.target as HTMLInputElement;
+		appStore.setSearchTerm(target.value);
+	}
+
+	function handleCategoryChange(event: Event) {
+		const target = event.target as HTMLSelectElement;
+		// Ensure the value is treated as the correct type before calling action
+		appStore.setFilterCategory(target.value as 'all' | Category);
+	}
 </script>
 
-{#if $transactions.length > 0}
+{#if $appStore.transactions.length > 0}
 	<div class="filters">
 		<div class="search-filter">
-			<input type="text" placeholder="Search transactions..." bind:value={$searchTerm} />
+			<input
+				type="text"
+				placeholder="Search transactions..."
+				value={$appStore.filters.searchTerm}
+				on:input={handleSearchInput}
+			/>
 		</div>
 
 		<div class="category-filter">
-			<select bind:value={$filterCategory}>
+			<select value={$appStore.filters.category} on:change={handleCategoryChange}>
 				<option value="all">All Categories</option>
-				{#each $categories as category (category)}
+				{#each $appStore.categories as category (category)}
 					<option value={category}>{category}</option>
 				{/each}
 			</select>

@@ -1,27 +1,28 @@
 <script lang="ts">
 	import { get } from 'svelte/store';
-	import { onDestroy } from 'svelte'; // Import onDestroy for cleanup
+	import { onDestroy } from 'svelte';
 
-	// Import service functions from conversationService using correct names
+	// Import service functions (assuming they use appStore internally)
 	import {
-		sendMessage, // Changed from sendUserMessage
+		sendMessage,
 		generateSummary,
-		completeAndClear, // Changed from completeConversation
-		abortAndClear // Changed from abortConversation
+		completeAndClear,
+		abortAndClear
 	} from '$lib/services/ai/conversation/conversationService';
 
-	// Import store for adding final transactions
-	import { addTransactions } from '$lib/stores'; // Assumes this is the correct store for the main list
-	import {
-		extractedTransactions,
-		isProcessing
-	} from '$lib/services/ai/conversation/conversationDerivedStores';
-		import type { Transaction } from '$lib/stores/types';
+	// --- REMOVE adapter import for addTransactions ---
+	// import { addTransactions } from '$lib/stores';
+
+	// --- Import appStore directly ---
+	import { appStore } from '$lib/stores/AppStore'; // Ensure this is present
+
+	import type { Transaction } from '$lib/stores/types';
 
 	let userInput = '';
-	let submitTimeoutId: ReturnType<typeof setTimeout> | null = null; // For debounce
-	let isSubmitting = false; // Simple debounce flag
+	let submitTimeoutId: ReturnType<typeof setTimeout> | null = null;
+	let isSubmitting = false;
 
+	// debounceSubmit function... (no changes needed)
 	function debounceSubmit() {
 		if (isSubmitting) {
 			console.log('[LLMInputBar] Debounce: Submit already in progress.');
@@ -29,60 +30,59 @@
 		}
 		isSubmitting = true;
 		handleSubmit();
-		// Reset flag after a short delay
 		submitTimeoutId = setTimeout(() => {
 			isSubmitting = false;
-		}, 300); // 300ms debounce window
+		}, 300);
 	}
 
+	// handleSubmit function... (no changes needed, uses service)
 	function handleSubmit() {
 		const currentInput = userInput.trim();
-		// Use get() for derived stores within script logic
-		if (!currentInput || get(isProcessing)) {
-			if (get(isProcessing)) console.log('[LLMInputBar] Submit blocked: Already processing.');
-			if (!currentInput) console.log('[LLMInputBar] Submit blocked: Input empty.');
-			// Reset debounce flag if submit is blocked
+		const processing = get(appStore).conversation.isProcessing;
+		if (!currentInput || processing) {
+			// ... (error logging) ...
 			isSubmitting = false;
 			if (submitTimeoutId) clearTimeout(submitTimeoutId);
 			return;
 		}
-		console.log('[LLMInputBar] Handling submit via handleSubmit...');
-		sendMessage(currentInput); // Call corrected service function
+		sendMessage(currentInput);
 		userInput = '';
-		// Keep isSubmitting = true until timeout clears it
 	}
 
+	// handleComplete function... (Updated action call)
 	function handleComplete() {
-		// Use get() for derived stores within script logic
-		if (get(isProcessing)) return;
-		const txns = completeAndClear(); // Call corrected service function
-		if (txns.length > 0) {
-			addTransactions(txns); // Add to the main application store
+		if (get(appStore).conversation.isProcessing) return;
+		const txns = completeAndClear(); // Service call
+		if (txns?.length > 0) {
+			// Check if txns is truthy and has length
+			// --- Call appStore action directly ---
+			appStore.addTransactions(txns);
+		} else {
+			console.warn('[LLMInputBar] completeAndClear service returned no transactions.');
 		}
 	}
 
+	// requestSummary function... (no changes needed, uses service)
 	function requestSummary() {
-		// Use get() for derived stores within script logic
-		if (get(isProcessing)) return;
-		generateSummary(); // Call service function
+		if (get(appStore).conversation.isProcessing) return;
+		generateSummary();
 	}
 
+	// handleCancel function... (no changes needed, uses service)
 	function handleCancel() {
-		abortAndClear(); // Call corrected service function
+		abortAndClear();
 		userInput = '';
-		// Clear debounce state on cancel
 		isSubmitting = false;
 		if (submitTimeoutId) clearTimeout(submitTimeoutId);
 	}
 
 	onDestroy(() => {
-		// Clear timeout on component destroy
 		if (submitTimeoutId) clearTimeout(submitTimeoutId);
 	});
 
-	// Cast store values to their expected types for use in the template
-	$: extractedCount = (get(extractedTransactions) as Transaction[]).length;
-	$: isProcessingValue = get(isProcessing) as boolean;
+	// Reactive variables deriving from appStore... (no changes needed)
+	$: extractedCount = $appStore.conversation.extractedTransactions.length;
+	$: isProcessingValue = $appStore.conversation.isProcessing;
 </script>
 
 <div class="input-container">
