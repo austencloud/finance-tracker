@@ -67,7 +67,7 @@ export function getExtractionPrompt(text: string, todayDateString: string): stri
     3. details: (String) Any additional context provided (e.g., "for birthday", "invoice #123") - empty string "" if none.
     4. type: (String) Best guess of transaction type ("Card", "Cash", "Check", "Transfer", "PayPal", "Zelle", "ACH", "Deposit", "Withdrawal", etc.) or "unknown".
     5. amount: (Number) The numeric dollar amount without currency symbol (e.g., 20.00 not $20.00). Must be greater than 0. Use 0 only if amount is truly unknown.
-    6. direction: (String) "IN" for received money (income, deposit, credit), "OUT" for spent/paid money (expense, debit, withdrawal). **If the direction cannot be reliably determined from keywords or context, set this field to the literal string "unknown". Do NOT guess.**
+    6. direction: (String) "in" for received money (income, deposit, credit), "out" for spent/paid money (expense, debit, withdrawal). **If the direction cannot be reliably determined from keywords or context, set this field to the literal string "unknown". Do NOT guess.**
 
     EXAMPLE 1:
     Input: "I spent $20 at Target yesterday and received $50 from Mom last week for my birthday" (assuming today is 2025-04-14)
@@ -132,7 +132,7 @@ export function getOptimizedExtractionPrompt(text: string, todayDateString: stri
     - details: (String) Any secondary details like PPD IDs, reference numbers if clearly separable, otherwise "".
     - type: (String) The transaction type identified (e.g., "ACH", "Zelle", "Card", "Deposit"). Infer if not explicit.
     - amount: (Number) The numeric amount WITHOUT the '$' sign (e.g., 599.52). Must be greater than 0.
-    - direction: (String) "IN" for credits/deposits, "OUT" for debits/withdrawals/card purchases. Infer from type line (credit/debit) or keywords. **If the direction cannot be reliably determined, set this field to the literal string "unknown". Do NOT guess.**
+    - direction: (String) "in" for credits/deposits, "out" for debits/withdrawals/card purchases. Infer from type line (credit/debit) or keywords. **If the direction cannot be reliably determined, set this field to the literal string "unknown". Do NOT guess.**
 
     EXAMPLE:
     Input Snippet:

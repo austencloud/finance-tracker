@@ -1,9 +1,12 @@
-<!-- src/lib/components/input/InputForm.svelte -->
+<!-- src/lib/components/input/InputForm.svelte (Updated) -->
 <script lang="ts">
 	import LLMConversationLayout from './LLMConversation/LLMConversationLayout.svelte';
 	import { loading, showSuccessMessage } from '$lib/stores/uiStore';
 	import { addTransactions } from '$lib/stores/transactionStore';
 	import { parseTransactionData, getSampleData } from '$lib/services/parser';
+	import { processBulkTransactions } from '$lib/services/bulkProcessingOrchestrator';
+	import { isBulkProcessing } from '$lib/stores/bulkProcessingStore';
+	import BulkProcessingUI from '../transactions/BulkProcessingUI.svelte';
 	import type { Transaction } from '$lib/types/transactionTypes';
 	import { isLLMAvailable } from '$lib/services/ai/deepseek-client';
 
@@ -14,6 +17,10 @@
 	let inputText = '';
 	let llmAvailable = false;
 	let processingError = '';
+
+	// Bulk data detection
+	const BULK_THRESHOLD_LINES = 20; // Adjust based on your definition of "bulk"
+	const BULK_THRESHOLD_LENGTH = 1000; // Adjust based on your definition of "bulk"
 
 	// Check if LLM is available
 	const checkLLMAvailability = async () => {
@@ -32,6 +39,14 @@
 	// Run the check when component mounts
 	checkLLMAvailability();
 
+	// Check if text qualifies as "bulk" data
+	function isBulkData(text: string): boolean {
+		if (!text) return false;
+
+		const lineCount = text.split('\n').length;
+		return lineCount > BULK_THRESHOLD_LINES || text.length > BULK_THRESHOLD_LENGTH;
+	}
+
 	// Handle form submission for standard pasting mode
 	async function handleStandardSubmit(): Promise<void> {
 		if (inputText.trim()) {
@@ -39,13 +54,36 @@
 			$loading = true;
 
 			try {
-				const parsedTransactions = parseTransactionData(inputText);
-				addTransactions(parsedTransactions);
+				// Check if this looks like bulk data
+				if (isBulkData(inputText) && llmAvailable) {
+					// Use the new parallel processing for bulk data
+					console.log('Detected bulk data, using parallel processing');
 
-				// Clear the input after parsing
-				inputText = '';
+					// Start the bulk processing flow
+					const success = await processBulkTransactions(inputText);
+
+					if (success) {
+						// Don't clear input text yet - user might need to retry
+						// inputText = '';
+
+						// Show success message temporarily
+						$showSuccessMessage = true;
+						setTimeout(() => ($showSuccessMessage = false), 3000);
+					} else {
+						processingError =
+							'There was a problem processing the bulk data. Check the results and try again if needed.';
+					}
+				} else {
+					// Regular processing for smaller data sets
+					console.log('Using standard processing');
+					const parsedTransactions = parseTransactionData(inputText);
+					addTransactions(parsedTransactions);
+
+					// Clear the input after parsing
+					inputText = '';
+				}
 			} catch (error) {
-				console.error('Error processing standard transactions:', error);
+				console.error('Error processing transactions:', error);
 				if (error instanceof Error) {
 					processingError = `Error processing transactions: ${error.message}`;
 				} else {
@@ -132,7 +170,12 @@
 		</div>
 	{/if}
 
-	{#if inputMode === 'standard'}
+	<!-- Show bulk processing UI when active -->
+	{#if $isBulkProcessing}
+		<BulkProcessingUI />
+	{/if}
+
+	{#if inputMode === 'standard' && !$isBulkProcessing}
 		<div class="input-options">
 			<div class="option">
 				<h3>Option 1: Paste Text</h3>
@@ -142,6 +185,15 @@
 						placeholder="Paste your transaction data here (standard formats work best)..."
 						rows="10"
 					></textarea>
+
+					{#if isBulkData(inputText) && llmAvailable}
+						<div class="bulk-data-notice">
+							<p>
+								<strong>Large data set detected!</strong> This will be processed in parallel chunks for
+								improved performance.
+							</p>
+						</div>
+					{/if}
 
 					<button type="submit" disabled={$loading}>
 						{$loading ? 'Processing...' : 'Process Pasted Text'}
@@ -169,7 +221,7 @@
 				</div>
 			</div>
 		</div>
-	{:else if inputMode === 'aiChat' && llmAvailable}
+	{:else if inputMode === 'aiChat' && llmAvailable && !$isBulkProcessing}
 		<div class="ai-chat-container">
 			<LLMConversationLayout />
 		</div>
@@ -298,6 +350,20 @@
 		padding: 10px 15px;
 		border-radius: 4px;
 		margin-bottom: 15px;
+	}
+
+	.bulk-data-notice {
+		background-color: #e8f4fd;
+		border-left: 4px solid #3498db;
+		padding: 10px 15px;
+		border-radius: 4px;
+		margin: 10px 0;
+	}
+
+	.bulk-data-notice p {
+		margin: 0;
+		font-size: 14px;
+		color: #2c3e50;
 	}
 
 	.mode-switcher {

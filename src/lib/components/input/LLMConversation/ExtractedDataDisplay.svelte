@@ -15,6 +15,7 @@
 	// Add explicit typing to ensure transactions is recognized as Transaction[]
 	$: transactions = $extractedTransactions as Transaction[];
 
+
 	// Keep the debug subscription if needed
 	const unsubscribe = extractedTransactions.subscribe((value) => {
 		// console.log('[DEBUG] ExtractedDataDisplay received store update:', JSON.stringify(value));
@@ -32,7 +33,7 @@
 		<p class="placeholder">No transactions extracted yet...</p>
 	{:else}
 		<ul class="transaction-list">
-			{#each transactions as txn (txn.id)}
+			{#each transactions as txn (txn.id || crypto.randomUUID())}
 				<li class="transaction-item">
 					<div class="date">{txn.date === 'unknown' ? 'Date?' : txn.date}</div>
 					<div class="desc">{txn.description === 'unknown' ? 'Description?' : txn.description}</div>

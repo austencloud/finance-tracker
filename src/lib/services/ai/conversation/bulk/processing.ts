@@ -6,6 +6,7 @@ import { extractTransactionsFromText } from '../../extraction/orchestrator';
 import { llmChunkTransactions } from './llm-chunking';
 // Keep helpers for deduplication and summary
 import { deduplicateTransactions, getCategoryBreakdown } from './processing-helpers';
+import { v4 as uuidv4 } from 'uuid';
 
 // Import from derived stores now
 import {
@@ -21,7 +22,7 @@ import { isBulkData } from '../conversation-helpers';
 import { conversationStore } from '../conversationStore';
 
 // Helper function to safely update store (avoiding type errors)
-function updateStatus(message: string): void {
+function updateStatus(message: string, p0: number): void {
 	// @ts-ignore - Ignoring TypeScript errors here as we know this is the correct way to update the store
 	conversationStatus.set(message);
 }
@@ -39,127 +40,149 @@ function updateProgress(value: number): void {
  * @param message The user's input message.
  * @returns Object indicating if handled and an immediate response message.
  */
-export async function startBackgroundProcessing(
-	message: string
-): Promise<{ handled: boolean; response: string }> {
-	// Double-check if it's bulk data
+
+export async function enhancedBackgroundProcessing(message: string) {
 	if (!isBulkData(message)) {
 		return { handled: false, response: '' };
 	}
 
 	if (get(isProcessing)) {
-		console.warn('[startBackgroundProcessing] Already processing, ignoring request.');
-		return { handled: true, response: "I'm still working on the previous request. Please wait." };
+		console.warn('[enhancedBackgroundProcessing] Already processing, ignoring request.');
+		return {
+			handled: true,
+			response: "I'm still working on the previous batch. Please wait."
+		};
 	}
 
-	console.log('[startBackgroundProcessing] Starting background processing with LLM chunking...');
+	console.log('[enhancedBackgroundProcessing] Starting enhanced processing...');
 	conversationStore._setProcessing(true);
 
 	// Give immediate feedback
-	updateStatus('Asking AI to identify transactions...');
-	updateProgress(5);
+	updateStatus('Chunking transaction data...', 5);
 
-	const immediateResponse = `Okay, I'll ask the AI to identify individual transactions in your statement first, then process them. This might take a moment...`;
+	const immediateResponse = `I'll process these transactions in chunks and show you results as they come in. This should be much faster!`;
 
-	// --- Start Background Task ---
+	// Start Background Task
 	setTimeout(async () => {
-		let processingErrorOccurred = false;
-		let allExtractedTxns: Transaction[] = [];
-
 		try {
-			updateStatus('AI is identifying transactions (0%)...');
-			updateProgress(10);
+			// --- Step 1: Chunk the data ---
+			updateStatus('Identifying transaction chunks...', 10);
 			await tick();
 
-			// --- Step 1: Get chunks from LLM ---
-			const llmChunks = await llmChunkTransactions(message);
-			const totalChunks = llmChunks.length;
-
-			if (totalChunks === 0) {
+			const chunks = await llmChunkTransactions(message);
+			if (chunks.length === 0) {
 				safeAddAssistantMessage(
-					'The AI could not identify distinct transaction blocks in your text. Please check the format.'
+					"I couldn't identify any clear transactions in your text. Could you try a different format?"
 				);
 				resetProcessingState();
 				return;
 			}
 
-			console.log(
-				`[backgroundProcessing] LLM identified ${totalChunks} potential transaction chunks.`
-			);
-			updateStatus(`Processing ${totalChunks} identified chunks (0%)...`);
-			updateProgress(20); // Progress after successful chunking
+			const totalChunks = chunks.length;
+			console.log(`[enhancedBackgroundProcessing] Split data into ${totalChunks} chunks`);
+			updateStatus(`Processing ${totalChunks} chunks in parallel...`, 15);
 			await tick();
 
-			// --- Step 2: Process LLM-generated chunks ---
-			for (let i = 0; i < totalChunks; i++) {
-				const chunk = llmChunks[i];
-				// Update progress: Scale 20% to 90% based on chunk processing
-				const progressPercent = 20 + Math.round(((i + 1) / totalChunks) * 70);
-				updateStatus(`Processing chunk ${i + 1}/${totalChunks} (${progressPercent}%)...`);
-				updateProgress(progressPercent);
-				console.log(`[backgroundProcessing] Processing LLM chunk ${i + 1}/${totalChunks}...`);
+			let allExtractedTxns = [];
+			let completedChunks = 0;
 
-				try {
-					// Call the regular orchestrator for extraction on this specific chunk
-					const chunkResult = await extractTransactionsFromText(chunk);
-					if (chunkResult && chunkResult.length > 0) {
-						allExtractedTxns.push(...chunkResult);
-						console.log(
-							`[backgroundProcessing] Extracted ${chunkResult.length} txns from chunk ${i + 1}. Total: ${allExtractedTxns.length}`
+			// --- Step 2: Process chunks in batches of 5 (or adjust based on your API limits) ---
+			const PARALLEL_BATCH_SIZE = 5;
+			const batchCount = Math.ceil(chunks.length / PARALLEL_BATCH_SIZE);
+
+			// Show the first transaction as soon as possible
+			safeAddAssistantMessage(
+				`Starting to process ${chunks.length} transaction chunks. I'll update you as I go...`
+			);
+
+			for (let batchIndex = 0; batchIndex < batchCount; batchIndex++) {
+				const batchStart = batchIndex * PARALLEL_BATCH_SIZE;
+				const batchEnd = Math.min(batchStart + PARALLEL_BATCH_SIZE, chunks.length);
+				const currentBatchChunks = chunks.slice(batchStart, batchEnd);
+
+				updateStatus(
+					`Processing batch ${batchIndex + 1}/${batchCount}...`,
+					15 + Math.round((batchIndex / batchCount) * 70)
+				);
+
+				// Create an array of promises for parallel processing
+				const batchPromises = currentBatchChunks.map(async (chunk, idx) => {
+					try {
+						// Use your existing extraction function
+						const chunkResult = await extractTransactionsFromText(chunk);
+						return chunkResult || [];
+					} catch (error) {
+						console.error(
+							`[enhancedBackgroundProcessing] Error in chunk ${batchStart + idx}:`,
+							error
 						);
-					} else {
-						console.log(`[backgroundProcessing] No txns extracted from chunk ${i + 1}.`);
+						return []; // Return empty array on error
 					}
-				} catch (error) {
-					console.error(`[backgroundProcessing] Error processing chunk ${i + 1}:`, error);
-					processingErrorOccurred = true;
+				});
+
+				// Wait for all chunks in this batch to complete
+				const batchResults = await Promise.all(batchPromises);
+
+				// Process results from this batch
+				let newTransactions: Transaction[] = [];
+				batchResults.forEach((chunkTxns) => {
+					if (chunkTxns.length > 0) {
+						newTransactions.push(...chunkTxns);
+					}
+					completedChunks++;
+				});
+
+				// Stream results as soon as we have them
+				if (newTransactions.length > 0) {
+					allExtractedTxns.push(...newTransactions);
+
+					// Update the UI with current transactions
+					// Use _appendExtractedTransactions to add without replacing existing ones
+					conversationStore._appendExtractedTransactions(
+						newTransactions,
+						`batch-${batchIndex}`,
+						uuidv4()
+					);
+
+					// If this isn't the final batch, give the user an update
+					if (batchIndex < batchCount - 1) {
+						const progressPct = Math.round((completedChunks / totalChunks) * 100);
+						safeAddAssistantMessage(
+							`Progress update: Extracted ${allExtractedTxns.length} transactions so far (${progressPct}% complete). Processing more chunks...`
+						);
+					}
 				}
-				await tick(); // Allow UI update
+
+				// Let the UI breathe between batches
+				await tick();
 			}
 
-			updateStatus('Finalizing results...');
-			updateProgress(95);
+			// --- Step 3: Finalize results ---
+			updateStatus('Finalizing results...', 95);
 			await tick();
 
-			// --- Step 3: Deduplicate and Summarize ---
+			// Deduplicate across all batches
 			const uniqueTransactions = deduplicateTransactions(allExtractedTxns);
-			console.log(
-				`[backgroundProcessing] Deduplicated ${allExtractedTxns.length} -> ${uniqueTransactions.length} transactions.`
-			);
 
 			let finalMessage = '';
 			if (uniqueTransactions.length > 0) {
-				// Use the conversationStore directly
-				conversationStore.update((state) => ({
-					...state,
-					extractedTransactions: [...state.extractedTransactions, ...uniqueTransactions]
-				}));
-
 				const categoryBreakdown = getCategoryBreakdown(uniqueTransactions);
 				finalMessage =
-					`Finished processing! I found ${uniqueTransactions.length} unique transactions.\n\n` +
-					`${categoryBreakdown}\n\n`;
-				if (processingErrorOccurred) {
-					finalMessage += 'Note: Some parts of your data might have caused errors.\n\n';
-				}
-				finalMessage += `You can see the extracted transactions now. What would you like to do next?`;
+					`All done! Extracted a total of ${uniqueTransactions.length} unique transactions.\n\n` +
+					`${categoryBreakdown}\n\n` +
+					`You can see all the transactions now. Need any help with categorizing them?`;
 			} else {
-				finalMessage = `I finished processing the statement but couldn't extract any valid transactions.`;
-				if (processingErrorOccurred) {
-					finalMessage += ' There were some errors during processing.';
-				}
-				finalMessage += ' Please check the format or try a different statement.';
+				finalMessage = `I finished processing but couldn't extract any valid transactions. The format might not be recognized.`;
 			}
+
 			safeAddAssistantMessage(finalMessage);
 		} catch (error) {
-			console.error('[backgroundProcessing] Unhandled error in background task:', error);
+			console.error('[enhancedBackgroundProcessing] Unhandled error:', error);
 			safeAddAssistantMessage(
-				'Sorry, a critical error occurred while processing the statement. Please try again.'
+				'Sorry, I ran into a problem while processing your transactions. Please try again with a smaller batch.'
 			);
-			processingErrorOccurred = true;
 		} finally {
-			resetProcessingState(processingErrorOccurred);
-			setState({ initialPromptSent: true });
+			resetProcessingState();
 		}
 	}, 50);
 
@@ -167,22 +190,29 @@ export async function startBackgroundProcessing(
 }
 
 /**
+ * Simple utility to wait for the next microtask, allowing UI updates.
+ */
+async function tick() {
+	await new Promise((resolve) => setTimeout(resolve, 10));
+}
+
+/**
+ * Resets the processing-related stores.
+ */
+function resetProcessingState() {
+	updateProgress(0);
+	updateStatus('', 0);
+	conversationStore._setProcessing(false);
+}
+
+/**
  * Resets the processing-related stores.
  * @param errorOccurred If true, sets status to 'Error'.
  */
-function resetProcessingState(errorOccurred = false): void {
-	updateProgress(0);
-	updateStatus(errorOccurred ? 'Error' : '');
-	conversationStore._setProcessing(false);
-	console.log(`[backgroundProcessing] Reset processing state. Error: ${errorOccurred}`);
-}
 
 /**
  * Simple utility to wait for the next microtask, allowing UI updates.
  */
-async function tick() {
-	await new Promise((resolve) => setTimeout(resolve, 0));
-}
 
 // Note: processing-helpers.ts would contain deduplicateTransactions and getCategoryBreakdown
 // Or you can keep them here if you prefer fewer files.

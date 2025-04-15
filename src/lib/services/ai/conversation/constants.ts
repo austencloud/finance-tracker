@@ -14,5 +14,5 @@ export const CORRECTION_REGEX =
 	/correction:|corrected date|updated:|changed to|actually was|is now|i've updated|i'll record the transaction with a date correction/i;
 
 // Thresholds and limits
-export const BULK_DATA_THRESHOLD_LINES = 1000000;
-export const BULK_DATA_THRESHOLD_LENGTH = 100000;
+export const BULK_DATA_THRESHOLD_LINES = 500;
+export const BULK_DATA_THRESHOLD_LENGTH = 1000;
