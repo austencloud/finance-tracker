@@ -1,28 +1,16 @@
 <script lang="ts">
-	// --- Import appStore directly ---
-	// This component now reads data from the central application store.
 	import { appStore } from '$lib/stores/AppStore';
-	// Import the Transaction type definition for type safety.
-	import type { Transaction } from '$lib/stores/types';
-	// onDestroy might be needed if you add subscriptions manually later, but not currently used.
+	import type { Transaction, Category, SortField } from '$lib/stores/types';
 	import { onDestroy } from 'svelte';
+	import { derived } from 'svelte/store'; // *** Import derived ***
 
 	// --- Local Helper Functions ---
-
-	/**
-	 * Formats a numeric amount or string into a USD currency string.
-	 * @param amount The amount to format.
-	 * @returns The formatted currency string (e.g., "$10.50"). Returns '$0.00' for invalid input.
-	 */
 	function formatCurrency(amount: number | string): string {
-		// Ensure amount is a number, removing currency symbols and commas if it's a string.
 		const num = typeof amount === 'string' ? parseFloat(amount.replace(/[$,]/g, '')) : amount;
-		// Handle cases where parsing fails or input is not a number.
 		if (isNaN(num)) {
 			console.warn(`[formatCurrency] Invalid amount received: ${amount}`);
-			return '$0.00'; // Return a default value for invalid input.
+			return '$0.00';
 		}
-		// Use Intl.NumberFormat for locale-aware currency formatting.
 		return num.toLocaleString('en-US', {
 			style: 'currency',
 			currency: 'USD',
@@ -31,45 +19,114 @@
 		});
 	}
 
-	/**
-	 * Handles clicking on a transaction item.
-	 * Calls the appStore action to select the transaction and show the details modal.
-	 * @param transactionId The UUID of the clicked transaction.
-	 */
 	function handleItemClick(transactionId: string) {
 		console.log(`[ExtractedDataDisplay] Item clicked: ${transactionId}`);
-		// Trigger the store action to open the modal for the selected transaction.
 		appStore.selectTransactionForDetails(transactionId);
 	}
 
-	// --- Reactive Variables ---
+	// --- Reactive Derived Store ---
+	// Create a derived store that automatically recalculates when appStore changes.
+	// This replicates the logic from appStore.getSortedFilteredTransactions
+	const sortedFilteredTransactions = derived(appStore, ($appStore) => {
+		console.log('[ExtractedDataDisplay derived] Recalculating derived store...'); // Debug log
+		const { transactions, filters } = $appStore;
 
-	// $: creates a reactive statement. This variable will automatically update
-	// whenever the appStore notifies its subscribers of changes.
-	// It calls the getSortedFilteredTransactions selector to get the list
-	// based on the current filter/sort state in the appStore.
-	$: transactions = appStore.getSortedFilteredTransactions();
+		// Filtering Logic
+		let filtered = transactions; // Start with all transactions
+		// Filter by Category
+		if (filters.category !== 'all') {
+			filtered = transactions.filter((t) => t.category === filters.category);
+		}
+		// Filter by Search Term
+		if (filters.searchTerm) {
+			const term = filters.searchTerm.toLowerCase();
+			filtered = filtered.filter(
+				(t) =>
+					(t.description || '').toLowerCase().includes(term) ||
+					(t.date || '').toLowerCase().includes(term) ||
+					(t.notes || '').toLowerCase().includes(term) ||
+					(t.category || '').toLowerCase().includes(term) ||
+					(t.type || '').toLowerCase().includes(term)
+			);
+		}
 
-	// *** DEBUGGING LOGS ***
-	// This reactive block runs whenever appStore updates.
+		// Sorting Logic
+		// Use [...filtered] to create a shallow copy before sorting, preventing mutation of the filtered array
+		const sorted = [...filtered].sort((a, b) => {
+			let valueA: any, valueB: any;
+			const field = filters.sortField as keyof Transaction; // Type assertion
+
+			// Handle specific sorting logic for date and amount
+			switch (field) {
+				case 'amount':
+					valueA = a.amount ?? 0; // Use nullish coalescing for safety
+					valueB = b.amount ?? 0;
+					break;
+				case 'date':
+					// Attempt to parse dates for comparison, fallback to string compare if invalid
+					try {
+						// Add T00:00:00 to avoid timezone issues during comparison
+						const dateA = new Date(a.date + 'T00:00:00').getTime();
+						const dateB = new Date(b.date + 'T00:00:00').getTime();
+						// Treat invalid dates as 0 for sorting purposes, or use string comparison as fallback
+						valueA = isNaN(dateA) ? (a.date === 'unknown' ? -Infinity : a.date) : dateA;
+						valueB = isNaN(dateB) ? (b.date === 'unknown' ? -Infinity : b.date) : dateB;
+						// If both are invalid dates, compare as strings
+						if (typeof valueA === 'string' && typeof valueB === 'string') {
+							// Standard string comparison
+						} else if (typeof valueA !== 'number') {
+							// Place invalid dates first/last consistently
+							return filters.sortDirection === 'asc' ? -1 : 1;
+						} else if (typeof valueB !== 'number') {
+							return filters.sortDirection === 'asc' ? 1 : -1;
+						}
+					} catch {
+						// Fallback to string comparison on any parsing error
+						valueA = a.date;
+						valueB = b.date;
+					}
+					break;
+				case 'description':
+				case 'category':
+				case 'type':
+				case 'direction':
+				case 'notes':
+				case 'id':
+					valueA = (a[field] || '').toLowerCase();
+					valueB = (b[field] || '').toLowerCase();
+					break;
+				default:
+					// Fallback for any other potential fields (though unlikely with defined SortField type)
+					valueA = a[field];
+					valueB = b[field];
+			}
+
+			// Comparison logic
+			const comparison = valueA < valueB ? -1 : valueA > valueB ? 1 : 0;
+			return filters.sortDirection === 'asc' ? comparison : -comparison; // Apply direction
+		});
+
+		console.log('[ExtractedDataDisplay derived] Recalculation complete. Count:', sorted.length); // Debug log
+		return sorted; // Return the final sorted and filtered array
+	});
+
+	// Debugging log (optional, keep if needed)
 	$: {
-		// Use JSON.stringify to get a snapshot of the array content for logging
-        // Check the raw transactions array length and content directly from the store subscription
-		console.log('[ExtractedDataDisplay] Store updated check. $appStore.transactions:', JSON.stringify($appStore.transactions));
-        // Check the length specifically used in the template's #if condition
-		console.log('[ExtractedDataDisplay] $appStore.transactions.length:', $appStore.transactions.length);
-        // Check the derived list that is actually iterated over
-		console.log('[ExtractedDataDisplay] Filtered/Sorted list (transactions variable):', JSON.stringify(transactions));
-        console.log('[ExtractedDataDisplay] Filtered/Sorted list length:', transactions.length);
+		console.log(
+			'[ExtractedDataDisplay reactive block] $appStore.transactions.length:',
+			$appStore.transactions.length
+		);
+		console.log(
+			'[ExtractedDataDisplay reactive block] $sortedFilteredTransactions length:',
+			$sortedFilteredTransactions.length
+		);
 	}
-	// *** END DEBUGGING LOGS ***
-
 </script>
 
 <div class="data-display-container">
-	<h4>Transactions ({transactions.length} matching filters)</h4>
+	<h4>Transactions ({$sortedFilteredTransactions.length} matching filters)</h4>
 
-	{#if transactions.length === 0}
+	{#if $sortedFilteredTransactions.length === 0}
 		{#if $appStore.transactions.length === 0}
 			<p class="placeholder">No transactions recorded yet...</p>
 		{:else}
@@ -77,15 +134,19 @@
 		{/if}
 	{:else}
 		<ul class="transaction-list">
-			{#each transactions as txn (txn.id)}
+			{#each $sortedFilteredTransactions as txn (txn.id)}
 				<button
 					type="button"
 					class="transaction-item interactive"
 					on:click={() => handleItemClick(txn.id)}
-					on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleItemClick(txn.id)}}
+					on:keydown={(e) => {
+						if (e.key === 'Enter' || e.key === ' ') handleItemClick(txn.id);
+					}}
 					tabindex="0"
 					title="Click to view/edit details for {txn.description}"
-					aria-label="View details for transaction on {txn.date} for {txn.description} amount {formatCurrency(txn.amount)}"
+					aria-label="View details for transaction on {txn.date} for {txn.description} amount {formatCurrency(
+						txn.amount
+					)}"
 				>
 					<div class="date">{txn.date === 'unknown' ? 'Date?' : txn.date}</div>
 					<div class="desc">{txn.description === 'unknown' ? 'Description?' : txn.description}</div>
@@ -120,7 +181,7 @@
 		display: flex;
 		flex-direction: column;
 		overflow-y: auto;
-		box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 	}
 	h4 {
 		margin-top: 0;
@@ -189,8 +250,12 @@
 		font-family: 'Courier New', Courier, monospace;
 		font-size: 1.05em;
 	}
-	.amount.income-amount { color: #27ae60; }
-	.amount.expense-amount { color: #c0392b; }
+	.amount.income-amount {
+		color: #27ae60;
+	}
+	.amount.expense-amount {
+		color: #c0392b;
+	}
 	.notes,
 	.type,
 	.category {
