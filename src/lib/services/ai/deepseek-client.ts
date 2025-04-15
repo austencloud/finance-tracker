@@ -1,209 +1,264 @@
 // src/lib/services/ai/deepseek-client.ts
 import { get } from 'svelte/store';
-import { conversationStatus } from './store';
+import { writable } from 'svelte/store'; // Use a local writable for status if needed
+import { AI_CONFIG } from '$lib/config/ai-config'; // Assuming config file exists
 
-// DeepSeek API configuration
-// DeepSeek API configuration
-const DEEPSEEK_API_URL = 'https://api.deepseek.com/v1';
-// Try adding the "sk-" prefix if it's not already there
-const DEEPSEEK_API_KEY = (import.meta.env.VITE_DEEPSEEK_API_KEY || '').startsWith('sk-')
-	? import.meta.env.VITE_DEEPSEEK_API_KEY
-	: `sk-${import.meta.env.VITE_DEEPSEEK_API_KEY}`;
-const CHAT_MODEL = 'deepseek-chat'; // Check if this is the correct model name
+// --- Local Store for API Status ---
+// This avoids polluting the global conversation status directly from the client
+const apiStatus = writable<'idle' | 'connecting' | 'processing' | 'error'>('idle');
+export const deepseekApiStatus = apiStatus; // Export read-only derived if preferred
 
-// Track when the last API call was made to avoid rate limiting
+// API configuration (adjust model names as needed)
+const CHAT_MODEL = 'deepseek-chat';
+// const REASONER_MODEL = 'deepseek-reasoner'; // Use if needed for specific tasks
+
+// Rate limiting
 let lastApiCallTime = 0;
 const MIN_API_CALL_INTERVAL = 500; // ms
 
-/**
- * Ensures we don't make API calls too frequently
- */
+// Custom Error for API issues
+export class DeepSeekApiError extends Error {
+	constructor(
+		message: string,
+		public status?: number,
+		public context?: string,
+		public details?: unknown
+	) {
+		super(message);
+		this.name = 'DeepSeekApiError';
+	}
+}
+
 async function throttleApiCall(): Promise<void> {
 	const now = Date.now();
 	const timeElapsed = now - lastApiCallTime;
-
 	if (timeElapsed < MIN_API_CALL_INTERVAL) {
 		const waitTime = MIN_API_CALL_INTERVAL - timeElapsed;
 		await new Promise((resolve) => setTimeout(resolve, waitTime));
 	}
-
 	lastApiCallTime = Date.now();
 }
 
-/**
- * Handles errors from the DeepSeek API
- */
-function handleApiError(error: any, context: string): Error {
-	conversationStatus.set('Error');
+async function fetchWithTimeout(
+	resource: RequestInfo | URL,
+	options: RequestInit & { timeout?: number } = {}
+) {
+	const { timeout = 15000 } = options; // Default 15s timeout
 
-	// Log detailed error information
-	console.error(`[${context}] API Error:`, error);
+	const controller = new AbortController();
+	const id = setTimeout(() => controller.abort(), timeout);
 
-	if (error instanceof Error) {
-		return new Error(`${context} error: ${error.message}`);
+	try {
+		const response = await fetch(resource, {
+			...options,
+			signal: controller.signal
+		});
+		clearTimeout(id);
+		return response;
+	} catch (error) {
+		clearTimeout(id);
+		if (error instanceof DOMException && error.name === 'AbortError') {
+			throw new DeepSeekApiError('API request timed out', 408, 'fetchWithTimeout');
+		}
+		throw error; // Re-throw other errors
 	}
-
-	return new Error(`${context} error: Unknown error occurred`);
 }
 
 /**
- * Sends messages to the DeepSeek Chat API with improved error handling
+ * Sends messages to the DeepSeek Chat API.
+ * Throws DeepSeekApiError on failure.
  */
-export async function deepseekChat(messages: { role: string; content: string }[]): Promise<string> {
+export async function deepseekChat(
+	messages: { role: string; content: string }[],
+	options: { temperature?: number; max_tokens?: number } = {}
+): Promise<string> {
 	console.log(`[deepseekChat] Sending ${messages.length} messages to DeepSeek...`);
-	const url = `${DEEPSEEK_API_URL}/chat/completions`;
+	const url = `${AI_CONFIG.apiUrl}${AI_CONFIG.chatEndpoint}`;
+	const { temperature = 0.7, max_tokens = 2048 } = options;
+
+	await throttleApiCall();
+	apiStatus.set('connecting');
 
 	try {
-		// Make sure we don't hit rate limits
-		await throttleApiCall();
-
-		// Update status
-		conversationStatus.set('Connecting to AI...');
-
-		const response = await fetch(url, {
+		const response = await fetchWithTimeout(url, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
-				Authorization: `Bearer ${DEEPSEEK_API_KEY}`
+				Authorization: `Bearer ${AI_CONFIG.apiKey}`
 			},
 			body: JSON.stringify({
 				model: CHAT_MODEL,
 				messages: messages,
-				temperature: 0.7,
-				max_tokens: 2048
-			})
+				temperature: temperature,
+				max_tokens: max_tokens
+			}),
+			timeout: 30000 // Longer timeout for chat
 		});
 
-		// Handle HTTP errors
 		if (!response.ok) {
-			const errorBody = await response.text();
-			console.error(`[deepseekChat] API Error (${response.status}):`, errorBody);
-
-			// Handle different error types
-			if (response.status === 401 || response.status === 403) {
-				throw new Error('Authentication failed. Please check your API key.');
-			} else if (response.status === 429) {
-				throw new Error('Rate limit exceeded. Please try again shortly.');
-			} else if (response.status >= 500) {
-				throw new Error('The AI service is experiencing issues. Please try again later.');
-			} else {
-				throw new Error(`DeepSeek API error: ${response.status}`);
+			let errorBody: any = null;
+			try {
+				errorBody = await response.json(); // Try parsing JSON error
+			} catch {
+				errorBody = await response.text(); // Fallback to text
 			}
+			console.error(`[deepseekChat] API Error (${response.status}):`, errorBody);
+			throw new DeepSeekApiError(
+				`API Error: ${errorBody?.error?.message || response.statusText || 'Unknown error'}`,
+				response.status,
+				'deepseekChat',
+				errorBody
+			);
 		}
 
 		const data = await response.json();
+		apiStatus.set('idle');
 
-		// Reset error status if successful
-		if (get(conversationStatus) === 'Error') {
-			conversationStatus.set('');
-		}
-
-		if (data.choices && data.choices.length > 0 && data.choices[0].message) {
+		if (data.choices && data.choices.length > 0 && data.choices[0].message?.content) {
 			console.log('[deepseekChat] Received successful response');
 			return data.choices[0].message.content;
 		} else {
 			console.error('[deepseekChat] Unexpected response structure:', data);
-			throw new Error('Unexpected DeepSeek response structure');
+			throw new DeepSeekApiError('Unexpected response structure', undefined, 'deepseekChat', data);
 		}
 	} catch (error) {
-		throw handleApiError(error, 'deepseekChat');
+		apiStatus.set('error');
+		if (error instanceof DeepSeekApiError) {
+			throw error; // Re-throw specific API error
+		}
+		console.error('[deepseekChat] Network or other error:', error);
+		throw new DeepSeekApiError(
+			error instanceof Error ? error.message : 'Network or client error',
+			undefined, // status code unknown
+			'deepseekChat',
+			error
+		);
 	}
 }
 
 /**
- * Sends a prompt to DeepSeek, expecting JSON output, with improved error handling
+ * Sends a prompt to DeepSeek expecting JSON output using JSON mode.
+ * Throws DeepSeekApiError on failure.
  */
-export async function deepseekGenerateJson(prompt: string, systemPrompt?: string): Promise<string> {
-	console.log(`[deepseekGenerateJson] Sending prompt to DeepSeek...`);
+export async function deepseekGenerateJson(
+	prompt: string,
+	systemPrompt?: string,
+	options: { temperature?: number; max_tokens?: number } = {}
+): Promise<string> {
+	console.log(`[deepseekGenerateJson] Sending prompt for JSON output...`);
+	const url = `${AI_CONFIG.apiUrl}${AI_CONFIG.chatEndpoint}`;
+	const { temperature = 0.3, max_tokens = 4096 } = options; // Max tokens higher for JSON
 
+	// Construct messages, ensuring JSON is requested
 	const messages = [
 		...(systemPrompt ? [{ role: 'system', content: systemPrompt }] : []),
-		{ role: 'user', content: prompt }
+		{ role: 'user', content: `${prompt}\n\nOutput ONLY the raw JSON object as specified.` } // Explicit instruction
 	];
 
+	await throttleApiCall();
+	apiStatus.set('processing');
+
 	try {
-		// Make sure we don't hit rate limits
-		await throttleApiCall();
-
-		// Update status
-		conversationStatus.set('Processing data...');
-
-		const response = await fetch(`${DEEPSEEK_API_URL}/chat/completions`, {
+		const response = await fetchWithTimeout(url, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
-				Authorization: `Bearer ${DEEPSEEK_API_KEY}`
+				Authorization: `Bearer ${AI_CONFIG.apiKey}`
 			},
 			body: JSON.stringify({
-				model: CHAT_MODEL,
+				model: CHAT_MODEL, // Or potentially REASONER_MODEL if needed
 				messages: messages,
-				temperature: 0.3,
-				response_format: { type: 'json_object' },
-				max_tokens: 4096
-			})
+				temperature: temperature,
+				response_format: { type: 'json_object' }, // <-- USE JSON MODE
+				max_tokens: max_tokens
+			}),
+			timeout: 45000 // Longer timeout for potentially complex JSON generation
 		});
 
 		if (!response.ok) {
-			const errorText = await response.text();
-			console.error(`[deepseekGenerateJson] API Error (${response.status}):`, errorText);
-
-			// Handle different error types
-			if (response.status === 401 || response.status === 403) {
-				throw new Error('Authentication failed. Please check your API key.');
-			} else if (response.status === 429) {
-				throw new Error('Rate limit exceeded. Please try again shortly.');
-			} else if (response.status >= 500) {
-				throw new Error('The AI service is experiencing issues. Please try again later.');
-			} else {
-				throw new Error(`DeepSeek API error: ${response.status}`);
+			let errorBody: any = null;
+			try {
+				errorBody = await response.json();
+			} catch {
+				errorBody = await response.text();
 			}
+			console.error(`[deepseekGenerateJson] API Error (${response.status}):`, errorBody);
+			throw new DeepSeekApiError(
+				`API Error: ${errorBody?.error?.message || response.statusText || 'Unknown error'}`,
+				response.status,
+				'deepseekGenerateJson',
+				errorBody
+			);
 		}
 
 		const data = await response.json();
+		apiStatus.set('idle');
 
-		// Reset error status if successful
-		if (get(conversationStatus) === 'Error') {
-			conversationStatus.set('');
-		}
-
-		if (data.choices && data.choices.length > 0 && data.choices[0].message) {
-			console.log('[deepseekGenerateJson] Received successful JSON response');
+		if (data.choices && data.choices.length > 0 && data.choices[0].message?.content) {
+			console.log('[deepseekGenerateJson] Received successful JSON response (syntax guaranteed)');
+			// Return the raw string content, parsing/validation happens elsewhere
 			return data.choices[0].message.content;
 		} else {
 			console.error('[deepseekGenerateJson] Unexpected response structure:', data);
-			throw new Error('Unexpected DeepSeek response structure');
+			throw new DeepSeekApiError(
+				'Unexpected response structure',
+				undefined,
+				'deepseekGenerateJson',
+				data
+			);
 		}
 	} catch (error) {
-		throw handleApiError(error, 'deepseekGenerateJson');
+		apiStatus.set('error');
+		if (error instanceof DeepSeekApiError) {
+			throw error; // Re-throw specific API error
+		}
+		console.error('[deepseekGenerateJson] Network or other error:', error);
+		throw new DeepSeekApiError(
+			error instanceof Error ? error.message : 'Network or client error',
+			undefined,
+			'deepseekGenerateJson',
+			error
+		);
 	}
 }
 
 /**
- * Check if the DeepSeek API is available with improved error handling
+ * Check if the DeepSeek API is available (basic check).
  */
 export async function isLLMAvailable(): Promise<boolean> {
+	if (!AI_CONFIG.apiKey || AI_CONFIG.apiKey === 'sk-') {
+		console.warn('DeepSeek API Key not configured.');
+		return false;
+	}
 	try {
-		// Make a minimal test request
 		await throttleApiCall();
-
-		const response = await fetch(`${DEEPSEEK_API_URL}/models`, {
+		const response = await fetchWithTimeout(`${AI_CONFIG.apiUrl}/models`, {
 			method: 'GET',
 			headers: {
-				Authorization: `Bearer ${DEEPSEEK_API_KEY}`
-			}
+				Authorization: `Bearer ${AI_CONFIG.apiKey}`
+			},
+			timeout: 5000 // Shorter timeout for availability check
 		});
-
-		// If we get any response, consider the API available
 		return response.ok;
 	} catch (error) {
-		console.error('[isLLMAvailable] Error checking DeepSeek availability:', error);
+		console.error(
+			'[isLLMAvailable] Error checking DeepSeek availability:',
+			error instanceof Error ? error.message : error
+		);
 		return false;
 	}
 }
 
 /**
- * Provides a fallback response when the API is unavailable
+ * Provides a generic fallback response for API issues.
  */
-export function getFallbackResponse(): string {
-	return "I'm currently having trouble connecting to my AI services. Please try again in a moment. If you were trying to record a transaction, make sure to include specific details like the amount, date, and what it was for.";
+export function getFallbackResponse(error?: unknown): string {
+	let baseMessage =
+		"I'm currently having trouble connecting to my AI services. Please try again in a moment.";
+	if (error instanceof DeepSeekApiError) {
+		baseMessage = `Sorry, I encountered an issue (${error.status || 'network'}): ${error.message}`;
+	} else if (error instanceof Error) {
+		baseMessage = `Sorry, an unexpected error occurred: ${error.message}`;
+	}
+	return `${baseMessage} If you were trying to record a transaction, please ensure you include specific details like the amount, date, and description.`;
 }

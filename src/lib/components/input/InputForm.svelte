@@ -4,7 +4,7 @@
 	import { loading, showSuccessMessage } from '$lib/stores/uiStore';
 	import { addTransactions } from '$lib/stores/transactionStore';
 	import { parseTransactionData, getSampleData } from '$lib/services/parser';
-	import type { Transaction } from '$lib/types';
+	import type { Transaction } from '$lib/types/transactionTypes';
 	import { isLLMAvailable } from '$lib/services/ai/deepseek-client';
 
 	// Input Mode State

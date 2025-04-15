@@ -1,21 +1,27 @@
-<!-- src/lib/components/input/LLMConversation/LLMMessageList.svelte -->
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
-	import { get } from 'svelte/store';
 	import {
 		conversationMessages,
-		isProcessing,
-		conversationStatus
-	} from '$lib/services/ai/conversation';
+		conversationStatus,
+		isProcessing
+	} from '$lib/services/ai/conversation/conversationDerivedStores';
+	import type { ConversationMessage } from '$lib/services/ai/conversation/conversationStore';
+	import { onMount, onDestroy } from 'svelte';
+	import { get } from 'svelte/store';
 
 	let messagesContainer: HTMLElement;
 	let autoScroll = true;
 	let unsub: () => void;
 
+	// Cast the store values to their expected types
+	$: messages = $conversationMessages as ConversationMessage[];
+	$: status = $conversationStatus as string;
+	$: processing = $isProcessing as boolean;
+
 	// Basic utility to HTML-escape and format code blocks, bold, italic, etc.
 	function formatMessage(content: string): string {
 		try {
 			let formatted = content || '';
+			// Basic HTML escaping
 			formatted = formatted
 				.replace(/&/g, '&amp;')
 				.replace(/</g, '&lt;')
@@ -23,16 +29,51 @@
 				.replace(/"/g, '&quot;')
 				.replace(/'/g, '&#039;');
 
-			// Code blocks
+			// Code blocks ```...``` - Capture content, escape it, then wrap
+			// Ensure multiline and special chars inside code blocks are handled
 			formatted = formatted.replace(/```([\s\S]*?)```/g, (match, code) => {
+				// Escape HTML within the code block *after* capturing it
 				const escapedCode = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-				return `<pre class="code-block">${escapedCode}</pre>`;
+				return `<pre class="code-block"><code>${escapedCode}</code></pre>`; // Wrap in <code>
 			});
 
 			// Bold **...**
 			formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-			// Italic _..._
-			formatted = formatted.replace(/_(.*?)_/g, '<em>$1</em>');
+			// Italic _..._ or *...* (ensure not interfering with bold)
+			// Match single underscores/asterisks not adjacent to others
+			formatted = formatted.replace(
+				/(?<![a-zA-Z0-9*])\*(?![* ])(.*?)(?<![ *])\*(?![a-zA-Z0-9*])/g,
+				'<em>$1</em>'
+			);
+			formatted = formatted.replace(
+				/(?<![a-zA-Z0-9_])_(?![_ ])(.*?)(?<![ _])_(?![a-zA-Z0-9_])/g,
+				'<em>$1</em>'
+			);
+
+			// Basic Lists (simple implementation)
+			// Unordered lists
+			formatted = formatted.replace(/^\s*-\s+(.*)/gm, '<li>$1</li>'); // Convert lines starting with '-'
+			formatted = formatted.replace(/(<li>.*?<\/li>)/gs, '<ul>$1</ul>'); // Wrap consecutive li in ul
+			formatted = formatted.replace(/<\/ul>\s*<ul>/g, ''); // Merge adjacent lists
+
+			// Ordered lists (simple implementation - doesn't handle nested or complex numbering)
+			formatted = formatted.replace(/^\s*\d+\.\s+(.*)/gm, '<li>$1</li>'); // Convert lines starting with '1.', '2.' etc.
+			formatted = formatted.replace(/(<li>.*?<\/li>)/gs, '<ol>$1</ol>'); // Wrap consecutive li in ol
+			formatted = formatted.replace(/<\/ol>\s*<ol>/g, ''); // Merge adjacent lists
+
+			// Convert newlines to <br> tags *outside* of pre blocks
+			const parts = formatted.split(/(<pre[\s\S]*?<\/pre>)/);
+			formatted = parts
+				.map((part, index) => {
+					if (index % 2 === 1) {
+						// It's a <pre> block
+						return part;
+					} else {
+						// It's regular text
+						return part.replace(/\n/g, '<br>');
+					}
+				})
+				.join('');
 
 			return formatted;
 		} catch (e) {
@@ -74,12 +115,12 @@
 </script>
 
 <div class="messages-container" bind:this={messagesContainer}>
-	{#each $conversationMessages as message (message)}
+	{#each messages as message, i (i)}
 		<div class="message {message.role === 'user' ? 'user-message' : 'assistant-message'}">
 			<div class="message-header">
 				{message.role === 'user' ? 'You' : 'Assistant'}
 			</div>
-			<div class="message-content" style="white-space: pre-wrap;">
+			<div class="message-content">
 				{#if message.content}
 					{@html formatMessage(message.content)}
 				{:else}
@@ -91,8 +132,7 @@
 		<p class="no-messages-placeholder">No messages yet...</p>
 	{/each}
 
-	<!-- Optional: typing indicator if the assistant is 'Thinking...' -->
-	{#if $isProcessing && $conversationStatus === 'Thinking...'}
+	{#if processing && status === 'Thinking...'}
 		<div class="message assistant-message thinking">
 			<div class="message-header">Assistant</div>
 			<div class="message-content">
@@ -148,6 +188,28 @@
 	.message-content {
 		word-break: break-word;
 	}
+	/* Ensure lists inside messages look okay */
+	.message-content :global(ul),
+	.message-content :global(ol) {
+		padding-left: 20px;
+		margin-top: 5px;
+		margin-bottom: 5px;
+	}
+	/* Style for code blocks */
+	.message-content :global(pre.code-block) {
+		background-color: #e9ecef;
+		border: 1px solid #ced4da;
+		border-radius: 4px;
+		padding: 10px;
+		overflow-x: auto;
+		white-space: pre; /* Keep whitespace within code block */
+		margin: 8px 0;
+		font-family: monospace;
+		font-size: 13px;
+	}
+	.message-content :global(pre.code-block code) {
+		font-family: monospace; /* Ensure code tag also uses monospace */
+	}
 	.no-messages-placeholder {
 		text-align: center;
 		color: #aaa;
@@ -157,7 +219,7 @@
 	.thinking .message-content {
 		display: flex;
 		align-items: center;
-		height: 24px;
+		height: 24px; /* Adjust height if needed */
 		padding-top: 5px;
 		padding-bottom: 5px;
 	}

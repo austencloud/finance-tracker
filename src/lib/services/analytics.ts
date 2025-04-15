@@ -1,5 +1,5 @@
 // src/lib/services/analytics.ts
-import type { Transaction } from '$lib/types';
+import type { Transaction } from '$lib/types/transactionTypes';
 import { deepseekChat, isLLMAvailable } from './ai/deepseek-client';
 
 /**

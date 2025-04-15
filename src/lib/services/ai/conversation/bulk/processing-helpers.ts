@@ -1,5 +1,5 @@
 // src/lib/services/ai/conversation/bulk/processing-helpers.ts
-import type { Transaction } from '$lib/types';
+import type { Transaction } from '$lib/types/transactionTypes';
 
 /**
  * Deduplicates transactions based on date, amount, and normalized description.
@@ -36,10 +36,8 @@ export function getCategoryBreakdown(transactions: Transaction[]): string {
 			categories.set(category, { count: 0, total: 0 });
 		}
 
-		// Ensure amount is a number
-		const amount = typeof txn.amount === 'string'
-			? parseFloat(txn.amount.replace(/[$,]/g, '')) || 0
-			: txn.amount || 0;
+		// Ensure amount is a valid number, defaulting to 0 if not.
+		const amount = typeof txn.amount === 'number' ? txn.amount : 0;
 
 		const entry = categories.get(category)!; // Assert non-null as we initialize above
 		entry.count++;

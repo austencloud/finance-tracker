@@ -1,16 +1,27 @@
 <script lang="ts">
-	// Import the store holding the data we want to display
-	import { extractedTransactions } from '$lib/services/ai/conversation';
-	// Import a utility to format currency nicely
-	import { formatCurrency } from '$lib/utils/currency';
-    import { onDestroy } from 'svelte'; // Make sure onDestroy is imported
+	import { extractedTransactions } from '$lib/services/ai/conversation/conversationDerivedStores';
+	import type { Transaction } from '$lib/types/transactionTypes';
+	import { onDestroy } from 'svelte'; // Make sure onDestroy is imported
+
+	function formatCurrency(amount: number | string): string {
+		const num = typeof amount === 'string' ? parseFloat(amount.replace(/[$,]/g, '')) : amount;
+		if (isNaN(num)) {
+			return 'Invalid Amount';
+		}
+		return `$${num.toFixed(2)}`;
+	}
 
 	// Subscribe to the store using Svelte's reactive syntax ($)
-	// Whenever extractedTransactions updates, this 'transactions' variable will update,
-	// and the component will re-render automatically.
-	$: transactions = $extractedTransactions;
+	// Add explicit typing to ensure transactions is recognized as Transaction[]
+	$: transactions = $extractedTransactions as Transaction[];
+
+	// Keep the debug subscription if needed
 	const unsubscribe = extractedTransactions.subscribe((value) => {
-		console.log('[DEBUG] ExtractedDataDisplay received store update:', JSON.stringify(value));
+		// console.log('[DEBUG] ExtractedDataDisplay received store update:', JSON.stringify(value));
+	});
+
+	onDestroy(() => {
+		if (unsubscribe) unsubscribe();
 	});
 </script>
 
@@ -50,8 +61,8 @@
 		border-radius: 5px;
 		padding: 15px;
 		background-color: #fff;
-		height: 60vh; /* Match conversation height */
-		min-height: 400px; /* Match conversation height */
+		height: 60vh;
+		min-height: 400px;
 		display: flex;
 		flex-direction: column;
 		overflow-y: auto;
@@ -103,10 +114,10 @@
 		font-weight: bold;
 	}
 	.amount.in {
-		color: #27ae60; /* Green for income */
+		color: #27ae60;
 	}
 	.amount.out {
-		color: #c0392b; /* Red for expense */
+		color: #c0392b;
 	}
 
 	.notes,
