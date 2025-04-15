@@ -1,7 +1,7 @@
-<!-- src/lib/components/transactions/Filters.svelte -->
 <script lang="ts">
-	import { transactions, filterCategory, searchTerm } from '$lib/stores';
-	import { categories } from '$lib/stores/transactionStore';
+	// Imports are correct - they use the adapters from $lib/stores
+	import { transactions, filterCategory, searchTerm, categories } from '$lib/stores';
+	import type { Category } from '$lib/stores/types'; // Import Category type if needed
 </script>
 
 {#if $transactions.length > 0}
@@ -13,7 +13,7 @@
 		<div class="category-filter">
 			<select bind:value={$filterCategory}>
 				<option value="all">All Categories</option>
-				{#each categories as category}
+				{#each $categories as category (category)}
 					<option value={category}>{category}</option>
 				{/each}
 			</select>
@@ -22,6 +22,7 @@
 {/if}
 
 <style>
+	/* Styles remain unchanged */
 	.filters {
 		display: flex;
 		gap: 15px;

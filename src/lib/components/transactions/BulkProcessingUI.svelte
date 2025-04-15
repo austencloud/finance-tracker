@@ -6,12 +6,12 @@
 		isBulkProcessing,
 		processingStats,
 		tempExtractedTransactions,
-		finalizeBulkProcessing
-	} from '$lib/stores/bulkProcessingStore';
-	import { transactions, addTransactions } from '$lib/stores/transactionStore';
+		finalizeBulkProcessing,
+		addTransactions
+	} from '$lib/stores';
+
 	import { tick } from 'svelte';
 
-	// Function to finalize and add all transactions
 	async function completeAndAddTransactions() {
 		const txns = $tempExtractedTransactions;
 		if (txns.length > 0) {
@@ -21,7 +21,6 @@
 		}
 	}
 
-	// Function to cancel processing
 	function cancelProcessing() {
 		if (confirm('Are you sure you want to cancel processing?')) {
 			finalizeBulkProcessing(false);
@@ -40,7 +39,6 @@
 			<div class="progress-text">{$processingProgress}%</div>
 		</div>
 
-		<!-- Stats summary -->
 		<div class="stats-grid">
 			<div class="stat-card">
 				<div class="stat-title">Chunks Processed</div>
@@ -60,7 +58,6 @@
 			</div>
 		</div>
 
-		<!-- List of chunks with their status -->
 		<div class="chunks-list">
 			<h4>Processing Status</h4>
 			<div class="chunks-container">
@@ -98,7 +95,6 @@
 			</div>
 		</div>
 
-		<!-- Actions based on processing state -->
 		<div class="processing-actions">
 			{#if $processingStats.isComplete}
 				<div class="completion-notice">

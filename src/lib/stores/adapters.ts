@@ -111,3 +111,4 @@ export const addConversationMessage = (role: 'user' | 'assistant', content: stri
 	appStore.addConversationMessage(role, content);
 // Other conversation actions (sendMessage, generateSummary) should likely be called
 // from components/services importing conversationService, which itself uses AppStore now.
+export const closeTransactionDetails = () => appStore.closeTransactionDetails();

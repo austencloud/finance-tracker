@@ -1,28 +1,32 @@
 <script lang="ts">
-	// Import the main layout component
 	import LLMWithDataLayout from '$lib/components/input/LLMConversation/LLMWithDataLayout.svelte';
-	// Import the store ACTIONS and derived state
 	import { onMount } from 'svelte';
 
-	// Import stores and actions for global actions (assuming these remain outside the AI scope)
-	import { transactions, clearTransactions } from '$lib/stores'; // These manage the FINAL list
+	// Import needed derived stores & actions via adapters/index
+	import {
+		transactions,
+		clearTransactions,
+		isProcessing,
+		categories // <-- IMPORT categories store
+	} from '$lib/stores';
+
+	// Import appStore directly for the selector method
+	import { appStore } from '$lib/stores/AppStore';
+
+	// Import services
 	import { exportAsJson, generateHTMLReport } from '$lib/services/exporter';
+	import { initialize } from '$lib/services/ai/conversation/conversationService';
 
-	// --- CORRECTED IMPORT ---
-	// Import the specific derived store for processing state from the new file
-
-	// Import the initialize function from the service
-	import { initialize } from '$lib/services/ai/conversation/conversationService'; // <-- Import initialize from service
-	import { isProcessing } from '$lib/services/ai/conversation/conversationDerivedStores';
-	import { categoryTotals } from '$lib/stores/transactionStore';
-
-	// Initialize the conversation logic when this page component mounts
 	onMount(() => {
-		initialize(); // Call the initialize function from the service
+		initialize();
 	});
 
-	// Example: If you needed to react to AI processing state specifically
-	// $: console.log('AI Processing:', $isProcessing); // <-- Use $isProcessing
+	// Updated handler for report generation
+	function handleGenerateReport() {
+		const currentTotals = appStore.getCategoryTotals();
+		// Pass the categories array value ($categories)
+		generateHTMLReport($transactions, currentTotals, $categories);
+	}
 </script>
 
 <main class="page-container">
@@ -44,7 +48,7 @@
 			Export JSON (All)
 		</button>
 		<button
-			on:click={() => generateHTMLReport($transactions, $categoryTotals)}
+			on:click={handleGenerateReport}
 			disabled={$transactions.length === 0}
 			class="action-button primary-action"
 		>

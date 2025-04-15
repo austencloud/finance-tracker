@@ -1,6 +1,5 @@
 // src/lib/services/exporter.ts
-import type { Transaction, Category, CategoryTotals } from '$lib/types';
-import { categories } from '$lib/stores/transactionStore';
+import type { Transaction, Category, CategoryTotals } from '$lib/stores/types'; // Corrected type import path
 import { downloadFile } from '$lib/utils/helpers';
 
 /**
@@ -16,7 +15,8 @@ export function exportAsJson(transactions: Transaction[]): void {
  */
 export function generateHTMLReport(
 	transactions: Transaction[],
-	categoryTotals: CategoryTotals
+	categoryTotals: CategoryTotals,
+	categoriesList: Category[] // <-- ADD categoriesList argument
 ): void {
 	let html = `
     <!DOCTYPE html>
@@ -47,7 +47,6 @@ export function generateHTMLReport(
     <body>
       <h1>Transaction Report</h1>
       
-      <!-- Summary -->
       <h2>Summary</h2>
       <table>
         <thead>
@@ -59,31 +58,36 @@ export function generateHTMLReport(
         <tbody>
   `;
 
-	// Add summary rows
+	// Add summary rows (using provided categoryTotals)
 	let grandTotal = 0;
-	for (const [category, total] of Object.entries(categoryTotals)) {
-		const isExpense = category === 'Expenses';
-		grandTotal += total;
-
-		html += `
-      <tr>
-        <td>${category}</td>
-        <td class="amount ${isExpense ? 'debit' : 'credit'}">$${Math.abs(total).toFixed(2)}</td>
-      </tr>
-    `;
+	// Ensure we only iterate categories present in the totals
+	for (const category of categoriesList) {
+		const total = categoryTotals[category] || 0; // Default to 0 if category missing in totals
+		if (total !== 0 || category === 'Expenses') {
+			// Optionally show Expenses even if 0
+			const isExpense = category === 'Expenses';
+			grandTotal += total;
+			html += `
+            <tr>
+              <td>${category}</td>
+              <td class="amount ${isExpense ? 'debit' : 'credit'}">$${Math.abs(total).toFixed(2)}</td>
+            </tr>
+          `;
+		}
 	}
 
 	html += `
       <tr>
         <td class="total">Grand Total</td>
-        <td class="amount total ${grandTotal >= 0 ? 'credit' : 'debit'}">$${Math.abs(grandTotal).toFixed(2)}</td>
+        <td class="amount total ${grandTotal >= 0 ? 'credit' : 'debit'}">$${grandTotal.toFixed(2)}</td>
       </tr>
     </tbody>
   </table>
   `;
 
-	// Create a section for each category
-	for (const category of categories) {
+	// Create a section for each category (using the passed-in categoriesList)
+	// Use the passed categoriesList for the loop
+	for (const category of categoriesList) {
 		const categoryTransactions = transactions.filter((t) => t.category === category);
 
 		if (categoryTransactions.length > 0) {
@@ -101,16 +105,19 @@ export function generateHTMLReport(
           <tbody>
       `;
 
+			let categorySectionTotal = 0;
 			for (const txn of categoryTransactions) {
-				const amount = parseFloat(txn.amount.toString().replace(/[$,]/g, ''));
-				const isExpense = category === 'Expenses';
+				// Amount is already number
+				const amount = txn.amount;
+				const isExpense = txn.direction === 'out'; // Use direction
+				categorySectionTotal += isExpense ? -Math.abs(amount) : Math.abs(amount);
 
 				html += `
           <tr>
             <td>${txn.date}</td>
             <td>${txn.description}</td>
             <td>${txn.type}</td>
-            <td class="amount ${isExpense ? 'debit' : 'credit'}">$${amount.toFixed(2)}</td>
+            <td class="amount ${isExpense ? 'debit' : 'credit'}">$${Math.abs(amount).toFixed(2)}</td>
           </tr>
         `;
 			}
@@ -118,7 +125,7 @@ export function generateHTMLReport(
 			html += `
           <tr>
             <td colspan="3" class="total">Category Total:</td>
-            <td class="amount total ${categoryTotals[category as Category] >= 0 ? 'credit' : 'debit'}">$${Math.abs(categoryTotals[category as Category]).toFixed(2)}</td>
+            <td class="amount total ${categorySectionTotal >= 0 ? 'credit' : 'debit'}">$${Math.abs(categorySectionTotal).toFixed(2)}</td>
           </tr>
           </tbody>
         </table>

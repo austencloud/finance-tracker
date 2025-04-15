@@ -1,32 +1,40 @@
-<!-- src/lib/components/input/InputForm.svelte (Updated) -->
 <script lang="ts">
 	import LLMConversationLayout from './LLMConversation/LLMConversationLayout.svelte';
-	import { loading, showSuccessMessage } from '$lib/stores/uiStore';
-	import { addTransactions } from '$lib/stores/transactionStore';
+	import BulkProcessingUI from '../transactions/BulkProcessingUI.svelte';
+
+	// --- CORRECTED IMPORTS ---
+	// Import derived state and actions via adapters/index
+	import {
+		loading, // Derived store for reading loading state
+		showSuccessMessage, // Derived store for reading success message state
+		addTransactions, // Action to add transactions
+		isBulkProcessing, // Derived store for reading bulk processing state
+		setLoading // Action to set loading state
+	} from '$lib/stores';
+
+	// Import services (assuming these are or will be refactored to use appStore internally)
 	import { parseTransactionData, getSampleData } from '$lib/services/parser';
 	import { processBulkTransactions } from '$lib/services/bulkProcessingOrchestrator';
-	import { isBulkProcessing } from '$lib/stores/bulkProcessingStore';
-	import BulkProcessingUI from '../transactions/BulkProcessingUI.svelte';
 	import { isLLMAvailable } from '$lib/services/ai/deepseek-client';
+
+	// Import types
 	import type { Transaction } from '$lib/stores/types';
 
-	// Input Mode State
+	// --- Component State Remains the Same ---
 	type InputMode = 'standard' | 'aiChat';
 	let inputMode: InputMode = 'standard';
-
 	let inputText = '';
 	let llmAvailable = false;
 	let processingError = '';
 
-	// Bulk data detection
-	const BULK_THRESHOLD_LINES = 20; // Adjust based on your definition of "bulk"
-	const BULK_THRESHOLD_LENGTH = 1000; // Adjust based on your definition of "bulk"
+	// --- Constants Remain the Same ---
+	const BULK_THRESHOLD_LINES = 20;
+	const BULK_THRESHOLD_LENGTH = 1000;
 
-	// Check if LLM is available
+	// --- Logic Remains Mostly the Same ---
 	const checkLLMAvailability = async () => {
 		try {
 			llmAvailable = await isLLMAvailable();
-			// If LLM isn't available, default to standard mode
 			if (!llmAvailable) {
 				inputMode = 'standard';
 			}
@@ -36,13 +44,10 @@
 		}
 	};
 
-	// Run the check when component mounts
 	checkLLMAvailability();
 
-	// Check if text qualifies as "bulk" data
 	function isBulkData(text: string): boolean {
 		if (!text) return false;
-
 		const lineCount = text.split('\n').length;
 		return lineCount > BULK_THRESHOLD_LINES || text.length > BULK_THRESHOLD_LENGTH;
 	}
@@ -51,57 +56,56 @@
 	async function handleStandardSubmit(): Promise<void> {
 		if (inputText.trim()) {
 			processingError = '';
-			$loading = true;
+			// --- Use setLoading Action ---
+			setLoading(true);
 
 			try {
-				// Check if this looks like bulk data
 				if (isBulkData(inputText) && llmAvailable) {
-					// Use the new parallel processing for bulk data
 					console.log('Detected bulk data, using parallel processing');
-
-					// Start the bulk processing flow
+					// processBulkTransactions needs to handle its own state updates via appStore internally now
 					const success = await processBulkTransactions(inputText);
-
-					if (success) {
-						// Don't clear input text yet - user might need to retry
-						// inputText = '';
-
-						// Show success message temporarily
-						$showSuccessMessage = true;
-						setTimeout(() => ($showSuccessMessage = false), 3000);
-					} else {
+					if (!success) {
 						processingError =
 							'There was a problem processing the bulk data. Check the results and try again if needed.';
 					}
+					// Success message is handled by appStore.finalizeBulkProcessing if transactions were added
 				} else {
-					// Regular processing for smaller data sets
 					console.log('Using standard processing');
 					const parsedTransactions = parseTransactionData(inputText);
+					// Call the central addTransactions action
 					addTransactions(parsedTransactions);
-
-					// Clear the input after parsing
+					// Clear input text
 					inputText = '';
+					// Success message is handled by the addTransactions action in AppStore
 				}
 			} catch (error) {
 				console.error('Error processing transactions:', error);
-				if (error instanceof Error) {
-					processingError = `Error processing transactions: ${error.message}`;
-				} else {
-					processingError = 'Unknown error processing transactions';
-				}
+				processingError =
+					error instanceof Error
+						? `Error processing transactions: ${error.message}`
+						: 'Unknown error processing transactions';
 			} finally {
-				$loading = false;
+				// --- Use setLoading Action ---
+				setLoading(false);
 			}
 		}
 	}
 
 	// Load sample data
 	function loadSampleData(): void {
-		$loading = true;
-		const sampleData = getSampleData();
-		const parsedTransactions = parseTransactionData(sampleData);
-		addTransactions(parsedTransactions);
-		$loading = false;
+		// --- Use setLoading Action ---
+		setLoading(true);
+		try {
+			const sampleData = getSampleData();
+			const parsedTransactions = parseTransactionData(sampleData);
+			addTransactions(parsedTransactions); // Calls central action
+		} catch (error) {
+			console.error('Error loading sample data:', error);
+			processingError = 'Failed to load sample data.';
+		} finally {
+			// --- Use setLoading Action ---
+			setLoading(false);
+		}
 	}
 
 	// Import data from JSON
@@ -110,8 +114,9 @@
 		const file = input.files?.[0];
 		if (!file) return;
 
-		$loading = true;
-		processingError = ''; // Clear previous errors
+		// --- Use setLoading Action ---
+		setLoading(true);
+		processingError = '';
 
 		const reader = new FileReader();
 		reader.onload = (e: ProgressEvent<FileReader>) => {
@@ -120,7 +125,7 @@
 				if (typeof result === 'string') {
 					const importedData = JSON.parse(result) as Transaction[];
 					if (Array.isArray(importedData)) {
-						addTransactions(importedData);
+						addTransactions(importedData); // Calls central action
 					} else {
 						throw new Error('Invalid JSON format. Expected an array of transactions.');
 					}
@@ -128,26 +133,26 @@
 					throw new Error('Could not read file content.');
 				}
 			} catch (error) {
-				if (error instanceof Error) {
-					processingError = 'Error importing data: ' + error.message;
-				} else {
-					processingError = 'Unknown error importing data';
-				}
+				processingError =
+					error instanceof Error
+						? 'Error importing data: ' + error.message
+						: 'Unknown error importing data';
 			} finally {
-				$loading = false;
+				// --- Use setLoading Action ---
+				setLoading(false);
 			}
 		};
 		reader.onerror = () => {
 			processingError = 'Error reading the file.';
-			$loading = false;
+			// --- Use setLoading Action ---
+			setLoading(false);
 		};
 		reader.readAsText(file);
-
-		// Reset the file input
-		input.value = '';
+		input.value = ''; // Reset file input
 	}
 </script>
 
+// src/lib/components/input/InputForm.svelte (Refactored Script)
 <div class="form-container">
 	<div class="header-controls">
 		<h2>Input Transaction Data</h2>
@@ -170,7 +175,6 @@
 		</div>
 	{/if}
 
-	<!-- Show bulk processing UI when active -->
 	{#if $isBulkProcessing}
 		<BulkProcessingUI />
 	{/if}
