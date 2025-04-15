@@ -7,7 +7,10 @@ import {
 } from '$lib/utils/helpers';
 import { deepseekChat, getFallbackResponse } from '../../deepseek-client';
 import { getExtractionPrompt, getSystemPrompt } from '../../prompts';
-import { lastExtractionResult, extractedTransactions } from '../conversationDerivedStores';
+// Import derived stores for context only
+import { lastExtractionResult } from '../conversationDerivedStores';
+// Import the main app store for adding transactions and conversation store for state management
+import { appStore } from '$lib/stores/AppStore';
 import { conversationStore } from '../conversationStore';
 import type { Transaction } from '$lib/stores/types';
 
@@ -25,6 +28,7 @@ function createTransactionKey(txn: Transaction): string {
 /**
  * Handles messages that contain new transaction data to be extracted and added.
  * Includes checks for duplicate input text and duplicate transaction data.
+ * Adds new transactions to the central appStore.
  *
  * @param message The user's input message.
  * @param explicitDirectionIntent Optional direction hint from the service.
@@ -69,11 +73,9 @@ export async function handleExtraction(
 
 		const aiResponse = await deepseekChat(messages, { temperature: 0.2 });
 
-		// --- PARSE AND VALIDATE RESPONSE ---
-		let parsedData: unknown = parseJsonFromAiResponse(aiResponse); // Use unknown type initially
-		let parsedTransactions: Transaction[]; // Declare variable to hold the final array
+		let parsedData: unknown = parseJsonFromAiResponse(aiResponse);
+		let parsedTransactions: Transaction[];
 
-		// Check if the parsed data is the expected structure { transactions: [...] } or just [...]
 		if (
 			parsedData &&
 			typeof parsedData === 'object' &&
@@ -82,15 +84,12 @@ export async function handleExtraction(
 		) {
 			parsedTransactions = parsedData.transactions as Transaction[];
 		} else if (Array.isArray(parsedData)) {
-			// Handle cases where the AI returns just the array
 			parsedTransactions = parsedData as Transaction[];
 		} else {
-			// Parsing failed or returned unexpected structure
 			console.warn(
 				'[ExtractionHandler] Failed to parse a valid transaction array from AI response. Parsed data:',
 				parsedData
 			);
-			// Optionally check if aiResponse was non-JSON text and return { handled: false }
 			if (
 				aiResponse &&
 				typeof aiResponse === 'string' &&
@@ -100,11 +99,8 @@ export async function handleExtraction(
 				console.log('[ExtractionHandler] AI response was text, letting normal handler try.');
 				return { handled: false };
 			}
-			// Treat as extraction failure (0 transactions)
 			parsedTransactions = [];
-			// Could also throw: throw new Error('AI did not return a valid transaction array.');
 		}
-		// --- END PARSE AND VALIDATE ---
 
 		if (parsedTransactions.length === 0) {
 			console.log(
@@ -117,47 +113,43 @@ export async function handleExtraction(
 			};
 		}
 
-		// Apply explicit direction (safe now because parsedTransactions is guaranteed to be an array)
 		let finalTransactionsPotentiallyWithDuplicates = applyExplicitDirection(
 			parsedTransactions,
 			explicitDirectionIntent
 		);
 
-		// --- DUPLICATE TRANSACTION DATA CHECK ---
-		const currentExtracted = get(extractedTransactions);
-		const existingKeys = new Set(currentExtracted.map(createTransactionKey));
+		const currentMainTransactions = get(appStore).transactions;
+		const existingKeys = new Set(currentMainTransactions.map(createTransactionKey));
 
-		// Filter the newly parsed transactions
 		const trulyNewTransactions = finalTransactionsPotentiallyWithDuplicates.filter(
 			(newTxn) => !existingKeys.has(createTransactionKey(newTxn))
 		);
-		// --- END DUPLICATE TRANSACTION DATA CHECK ---
 
 		if (trulyNewTransactions.length === 0) {
 			console.warn(
-				`[ExtractionHandler] All ${finalTransactionsPotentiallyWithDuplicates.length} extracted transaction(s) are duplicates of existing ones.`
+				`[ExtractionHandler] All ${finalTransactionsPotentiallyWithDuplicates.length} extracted transaction(s) are duplicates of existing ones in the main list.`
 			);
 			conversationStore._updateStatus('Duplicates detected', 100);
+			conversationStore._setDuplicateConfirmationNeeded(
+				true,
+				finalTransactionsPotentiallyWithDuplicates
+			);
 			conversationStore._clearLastInputContext();
 			return {
 				handled: true,
-				response:
-					"It looks like I've already recorded all of those transactions. Did you want to add something else?"
+				response: `It looks like I've already recorded ${finalTransactionsPotentiallyWithDuplicates.length === 1 ? 'that transaction' : 'all of those transactions'}. Should I add ${finalTransactionsPotentiallyWithDuplicates.length === 1 ? 'it' : 'them'} again anyway (yes/no)?`
 			};
 		} else {
 			const duplicateCount =
 				finalTransactionsPotentiallyWithDuplicates.length - trulyNewTransactions.length;
 			console.log(
-				`[ExtractionHandler] Adding ${trulyNewTransactions.length} new transaction(s). Found ${duplicateCount} duplicate(s).`
+				`[ExtractionHandler] Adding ${trulyNewTransactions.length} new transaction(s) to appStore. Found ${duplicateCount} duplicate(s).`
 			);
 
-			conversationStore._setLastExtractionResult(
-				trulyNewTransactions,
-				message,
-				explicitDirectionIntent
-			);
+			appStore.addTransactions(trulyNewTransactions);
 
-			conversationStore._addTransactions(trulyNewTransactions);
+			// *** CORRECTED CALL: Pass only the message ***
+			conversationStore._setLastExtractionResult(message);
 
 			let response = `Added ${trulyNewTransactions.length} new transaction(s).`;
 			if (duplicateCount > 0) {
@@ -173,6 +165,7 @@ export async function handleExtraction(
 		const errorMsg = getFallbackResponse(error instanceof Error ? error : undefined);
 		conversationStore._updateStatus('Error during extraction');
 		conversationStore._clearLastInputContext();
+		conversationStore._clearDuplicateConfirmation();
 		return { handled: true, response: errorMsg };
 	}
 }

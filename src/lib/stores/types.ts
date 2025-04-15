@@ -1,5 +1,14 @@
 // src/lib/stores/types.ts
 
+// --- Import dependent types from schemas ---
+// Ensure these paths are correct for your project structure
+import type {
+	FinancialSummary,
+	AnomalyDetectionResult,
+	PredictionResult
+} from '$lib/schemas/AnalysisSchema';
+
+// --- Base Types (Transaction, Category, etc. - Assuming no changes needed) ---
 export type Category =
 	| 'PayPal Transfers'
 	| 'Business Income - Austen Cloud Performance'
@@ -26,12 +35,14 @@ export interface CategoryTotals {
 	[key: string]: number;
 }
 
+// --- State Slice Interfaces ---
+
 export interface UIState {
-	loading: boolean;
+	loading: boolean; // General loading (e.g., for file import)
 	showSuccessMessage: boolean;
 	selectedTransactionId: string | null;
 	showTransactionDetails: boolean;
-	currentCategory: Category;
+	currentCategory: Category; // For modal interaction
 }
 
 export type SortField = 'date' | 'amount' | 'description' | 'category';
@@ -53,9 +64,9 @@ export type UserMood = 'neutral' | 'frustrated' | 'chatty' | 'unknown';
 export interface ConversationState {
 	messages: ConversationMessage[];
 	status: string;
-	isProcessing: boolean;
+	isProcessing: boolean; // Specific to AI response generation
 	progress: number;
-	extractedTransactions: Transaction[];
+	// REMOVED: extractedTransactions: Transaction[];
 	userMood: UserMood;
 	_internal: {
 		initialPromptSent: boolean;
@@ -72,20 +83,31 @@ export interface ProcessingChunk {
 	text: string;
 	status: ChunkStatus;
 	message: string;
-	transactionCount: number;
+	transactionCount: number; // How many txns found *in this chunk*
 }
 export interface BulkProcessingState {
 	processingChunks: ProcessingChunk[];
 	processingProgress: number;
-	isBulkProcessing: boolean;
-	tempExtractedTransactions: Transaction[];
+	isBulkProcessing: boolean; // Controls the UI visibility
+	// REMOVED: tempExtractedTransactions: Transaction[];
 }
 
+// --- NEW: Analysis State Slice ---
+export interface AnalysisState {
+	summary: FinancialSummary | null;
+	anomalies: AnomalyDetectionResult | null;
+	predictions: PredictionResult | null;
+	loading: boolean; // Specific loading state for analysis calculations
+	error: string | null; // Any error during analysis
+}
+
+// --- Updated Master AppState ---
 export interface AppState {
-	transactions: Transaction[];
+	transactions: Transaction[]; // Single source of truth for transactions
 	categories: Category[];
 	ui: UIState;
 	filters: FilterState;
 	conversation: ConversationState;
 	bulkProcessing: BulkProcessingState;
+	analysis: AnalysisState; // Added analysis slice
 }

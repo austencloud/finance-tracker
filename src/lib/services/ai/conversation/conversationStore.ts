@@ -1,4 +1,5 @@
-import type { Transaction } from '$lib/stores/types';
+// src/lib/services/ai/conversation/conversationStore.ts
+import type { Transaction } from '$lib/stores/types'; // Ensure correct path to types
 import { writable, get, type Writable, type Readable } from 'svelte/store';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -10,30 +11,36 @@ export interface ConversationMessage {
 
 export type UserMood = 'neutral' | 'frustrated' | 'chatty' | 'unknown';
 
+// Define the state structure including the new fields for duplicate confirmation
 export interface ConversationState {
 	messages: ConversationMessage[];
 	status: string;
 	isProcessing: boolean;
 	progress: number;
-	extractedTransactions: Transaction[];
+	// REMOVED: extractedTransactions: Transaction[]; // Transactions are now in appStore
 	userMood: UserMood;
 	_internal: {
 		initialPromptSent: boolean;
-		messageLock: boolean;
-		backgroundTaskId: ReturnType<typeof setTimeout> | null;
+		messageLock: boolean; // Prevents rapid-fire assistant messages
+		backgroundTaskId: ReturnType<typeof setTimeout> | null; // ID for potential background tasks
 		waitingForDirectionClarification: boolean;
 		clarificationTxnIds: string[];
-		lastUserMessageText: string;
-		lastExtractionBatchId: string | null;
+		lastUserMessageText: string; // Context for corrections
+		lastExtractionBatchId: string | null; // Context for corrections
+		// --- NEW STATE for Duplicate Handling ---
+		waitingForDuplicateConfirmation: boolean;
+		pendingDuplicateTransactions: Transaction[];
+		// --- END NEW STATE ---
 	};
 }
 
+// Define the initial state including the new fields
 const initialState: ConversationState = {
 	messages: [],
 	status: '',
 	isProcessing: false,
 	progress: 0,
-	extractedTransactions: [],
+	// extractedTransactions: [], // REMOVED
 	userMood: 'unknown',
 	_internal: {
 		initialPromptSent: false,
@@ -42,33 +49,42 @@ const initialState: ConversationState = {
 		waitingForDirectionClarification: false,
 		clarificationTxnIds: [],
 		lastUserMessageText: '',
-		lastExtractionBatchId: null
+		lastExtractionBatchId: null,
+		// --- NEW STATE ---
+		waitingForDuplicateConfirmation: false,
+		pendingDuplicateTransactions: [],
+		// --- END NEW STATE ---
 	}
 };
 
+// Factory function to create the store instance
 function createInternalConversationStore() {
 	const store: Writable<ConversationState> = writable(initialState);
 	const { subscribe, update, set } = store;
 
+	// --- Internal Methods (prefixed with _) ---
+
 	function _addMessage(role: 'user' | 'assistant', content: string) {
 		update((state) => {
+			// Basic lock to prevent multiple assistant messages too quickly
 			if (state._internal.messageLock && role === 'assistant') {
-				console.warn('[ConvStore] messageLock active, dropping assistant msg:', content);
+				console.warn('[ConvStore] messageLock active, dropping assistant msg:', content.substring(0,50)+'...');
 				return state;
 			}
 			let messageLock = state._internal.messageLock;
 			if (role === 'assistant') {
-				messageLock = true;
+				messageLock = true; // Lock when assistant speaks
 			}
 			const newState: ConversationState = {
 				...state,
 				_internal: { ...state._internal, messageLock },
 				messages: [...state.messages, { role, content, timestamp: Date.now() }]
 			};
+			// Unlock shortly after assistant message is added
 			if (role === 'assistant') {
 				setTimeout(() => {
 					update((s) => ({ ...s, _internal: { ...s._internal, messageLock: false } }));
-				}, 0);
+				}, 10); // Small delay
 			}
 			return newState;
 		});
@@ -78,20 +94,23 @@ function createInternalConversationStore() {
 		update((state) => ({
 			...state,
 			status: newStatus,
+			// Update progress only if provided, clamping between 0 and 100
 			...(newProgress !== undefined && { progress: Math.max(0, Math.min(100, newProgress)) })
 		}));
 	}
 
 	function _setProcessing(processing: boolean) {
 		update((state) => {
+			// Keep status message if processing just finished, otherwise clear it
 			const statusToKeep = state.status && !state.isProcessing && processing === false;
-			const newStatus = processing ? state.status : statusToKeep ? state.status : '';
-			const newProgress = processing ? state.progress : statusToKeep ? state.progress : 0;
+			const newStatus = processing ? state.status : (statusToKeep ? state.status : '');
+			const newProgress = processing ? state.progress : (statusToKeep ? state.progress : 0);
 			return {
 				...state,
 				isProcessing: processing,
 				status: newStatus,
 				progress: newProgress,
+				// Clear background task ID when processing stops
 				_internal: {
 					...state._internal,
 					backgroundTaskId: processing ? state._internal.backgroundTaskId : null
@@ -108,41 +127,29 @@ function createInternalConversationStore() {
 	}
 
 	function _clearBackgroundProcessing() {
-		const currentTaskId = conversationStore._getInternalState().backgroundTaskId;
+		// Use get() to access current state if needed outside update
+		const currentTaskId = get(store)._internal.backgroundTaskId;
 		if (currentTaskId != null) {
 			clearTimeout(currentTaskId);
-			_setBackgroundTaskId(null);
+			_setBackgroundTaskId(null); // Update state via method
 			console.log('[ConvStore] Cleared existing background task.');
 		}
 	}
 
-	function _updateExtractedTransactions(
-		transactions: Transaction[],
-		associatedMessage: string,
-		batchId: string
-	) {
-		update((state) => ({
-			...state,
-			extractedTransactions: transactions,
-			_internal: {
-				...state._internal,
-				lastUserMessageText: associatedMessage,
-				lastExtractionBatchId: batchId
-			}
-		}));
-	}
+	// REMOVED: _updateExtractedTransactions, _appendExtractedTransactions, _replaceLastExtraction, _addTransactions
+	// These are no longer needed as transactions live in appStore
 
 	function _setLastExtractionResult(
-		transactions: Transaction[],
+		// transactions: Transaction[], // No longer need transactions here
 		originalInput: string,
-		appliedDirection: 'in' | 'out' | null
+		// appliedDirection: 'in' | 'out' | null // Direction context might still be useful
 	) {
 		update((state) => ({
 			...state,
 			_internal: {
 				...state._internal,
 				lastUserMessageText: originalInput,
-				lastExtractionBatchId: uuidv4()
+				lastExtractionBatchId: uuidv4() // Generate new batch ID for this context
 			}
 		}));
 	}
@@ -180,113 +187,73 @@ function createInternalConversationStore() {
 		}));
 	}
 
+    // --- CORRECTLY DEFINED Duplicate Confirmation Methods ---
+    function _setDuplicateConfirmationNeeded(needed: boolean, transactions: Transaction[] = []) {
+        update(state => ({
+            ...state,
+            _internal: {
+                ...state._internal,
+                waitingForDuplicateConfirmation: needed,
+                // Store copies to avoid mutation issues
+                pendingDuplicateTransactions: needed ? [...transactions] : []
+            }
+        }));
+    }
+
+    function _clearDuplicateConfirmation() {
+        // Simply call the setter with false
+        _setDuplicateConfirmationNeeded(false);
+    }
+    // --- END Duplicate Confirmation Methods ---
+
 	function reset() {
 		_clearBackgroundProcessing();
-		set(initialState);
+        _clearDuplicateConfirmation(); // Ensure confirmation state is cleared on reset
+		// Reset to a fresh initial state
+        const freshInitialState = {
+            ...initialState,
+            _internal: { ...initialState._internal } // Ensure internal state is also reset
+        };
+		set(freshInitialState);
 	}
 
+	// Return the public interface of the store
 	return {
 		subscribe,
-		update,
-		set,
+		update, // Expose update for advanced use cases if needed, otherwise remove
+		set,    // Expose set for replacing state if needed, otherwise remove
 		reset,
 
+		// --- Public Methods --- (Consider if all internal methods need to be public)
 		_addMessage,
 		_updateStatus,
 		_setProcessing,
 		_setBackgroundTaskId,
 		_clearBackgroundProcessing,
-		_updateExtractedTransactions,
-		_appendExtractedTransactions,
-		_replaceLastExtraction,
-		_addTransactions,
+		// Removed transaction methods
 		_setLastExtractionResult,
 		_setClarificationNeeded,
 		_setInitialPromptSent,
 		_setUserMood,
 		_clearLastInputContext,
+        // --- Export NEW methods ---
+        _setDuplicateConfirmationNeeded,
+        _clearDuplicateConfirmation,
+        // --- END Export NEW methods ---
 
+		// Helper to get internal state without subscribing externally
 		_getInternalState: () => {
-			let internal: ConversationState['_internal'] = initialState._internal;
-			subscribe(($state) => (internal = $state._internal))();
-			return internal;
+			// Use get() for safety if called outside component lifecycle
+			return get(store)._internal;
 		}
 	};
-	function _addTransactions(newTransactions: Transaction[]) {
-		if (!Array.isArray(newTransactions)) {
-			console.error('[ConvStore] Tried to add non-array transactions:', newTransactions);
-			return;
-		}
-
-		update((state) => ({
-			...state,
-			extractedTransactions: [...state.extractedTransactions, ...newTransactions]
-		}));
-	}
-
-	function _appendExtractedTransactions(
-		newTransactions: Transaction[],
-		associatedMessage: string,
-		batchId: string
-	) {
-		if (!Array.isArray(newTransactions)) {
-			console.error('[ConvStore] Tried to append non-array transactions:', newTransactions);
-			return;
-		}
-
-		update((state) => ({
-			...state,
-			extractedTransactions: [...state.extractedTransactions, ...newTransactions],
-			_internal: {
-				...state._internal,
-				lastUserMessageText: associatedMessage,
-				lastExtractionBatchId: batchId
-			}
-		}));
-	}
-
-	function _replaceLastExtraction(
-		newTransactions: Transaction[],
-		originalInput: string,
-		appliedDirection: 'in' | 'out' | null
-	) {
-		if (!Array.isArray(newTransactions)) {
-			console.error('[ConvStore] Tried to replace with non-array transactions:', newTransactions);
-			return;
-		}
-		// --- NEW METHODS ---
-		function _setDuplicateConfirmationNeeded(needed: boolean, transactions: Transaction[] = []) {
-			update((state) => ({
-				...state,
-				_internal: {
-					...state._internal,
-					waitingForDuplicateConfirmation: needed,
-					// Store copies to avoid mutation issues if needed
-					pendingDuplicateTransactions: needed ? [...transactions] : []
-				}
-			}));
-		}
-
-		function _clearDuplicateConfirmation() {
-			_setDuplicateConfirmationNeeded(false);
-		}
-		update((state) => {
-			console.log(`[ConvStore] Replacing extracted txns with ${newTransactions.length}.`);
-			return {
-				...state,
-				extractedTransactions: newTransactions,
-				_internal: {
-					...state._internal,
-					lastUserMessageText: originalInput,
-					lastExtractionBatchId: null
-				}
-			};
-		});
-	}
 }
 
+// Create and export the store instance
 export const conversationStore = createInternalConversationStore();
 
+// Export a readable version if external components only need to subscribe
 export const conversationReadable = {
 	subscribe: conversationStore.subscribe
 } as Readable<ConversationState>;
+

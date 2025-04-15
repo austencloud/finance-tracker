@@ -3,7 +3,6 @@
 export { appStore } from './AppStore';
 
 // Export all the legacy adapters for backward compatibility
-export * from './adapters';
 
 // Eventually when migration is complete, we'll remove the adapters
 // and only export the appStore

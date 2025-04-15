@@ -1,54 +1,56 @@
 // src/lib/services/ai/conversation/handlers/initial-data-handler.ts
-import { conversationMessages, extractedTransactions } from '../conversationDerivedStores';
+import { conversationMessages } from '../conversationDerivedStores'; // Read-only derived store
 import { get } from 'svelte/store';
-
 import { deepseekChat, getFallbackResponse } from '../../deepseek-client';
 import { getSystemPrompt, getExtractionPrompt } from '../../prompts';
-// Import necessary helpers
 import {
 	parseJsonFromAiResponse,
 	textLooksLikeTransaction,
 	applyExplicitDirection
 } from '$lib/utils/helpers';
-// Removed unused looksLikeBulkData import
-import { BULK_DATA_THRESHOLD_LENGTH } from '../constants'; // Import constant
-import { conversationStore } from '../conversationStore';
+import { BULK_DATA_THRESHOLD_LENGTH } from '../constants';
+import { conversationStore } from '../conversationStore'; // For updating state
+import { appStore } from '$lib/stores/AppStore'; // For adding transactions
 import type { Transaction } from '$lib/stores/types';
 
-// Define a basic type for chat messages if not already imported
+// Define a basic type for chat messages if not already imported elsewhere
 interface ChatMessage {
 	role: 'user' | 'assistant' | 'system';
 	content: string;
-	// Add other potential properties if they exist
+	timestamp?: number; // Optional timestamp
 }
 
 /**
  * Handles the *first* message from the user that appears to contain transaction data,
  * especially if it's NOT long enough to be considered "bulk" data.
+ * Adds extracted transactions directly to the appStore.
  *
  * @param message The user's input message.
  * @param explicitDirectionIntent Optional direction hint from the service.
- * @returns An object indicating if the message was handled. This handler manages its own state updates.
+ * @returns An object indicating if the message was handled. This handler manages its own state updates and does not return a response string.
  */
 export async function handleInitialData(
 	message: string,
 	explicitDirectionIntent: 'in' | 'out' | null
-): Promise<{ handled: boolean }> {
+	// *** CORRECTED RETURN TYPE ***
+): Promise<{ handled: boolean; response?: string }> { // Now matches other handlers
+
 	const history = get(conversationMessages) as ChatMessage[];
-	const currentTransactions = get(extractedTransactions) as Transaction[];
-	// NOTE: Ensure textLooksLikeTransaction is defined and exported from helpers
+	// *** Check main transaction list length now ***
+	const currentMainTransactions = get(appStore).transactions;
+
 	const looksLikeTxn = textLooksLikeTransaction(message);
 
 	// Conditions for this handler:
 	// 1. It looks like transaction data.
-	// 2. EITHER it's the very first user message OR no transactions have been extracted yet.
+	// 2. EITHER it's the very first user message OR no transactions exist in the main store yet.
 	// 3. It's NOT long enough to trigger the bulk handler.
 	const isFirstMeaningfulInput =
-		history.filter((m) => m.role === 'user').length <= 1 || currentTransactions.length === 0;
-	const isShortEnough = message.length < BULK_DATA_THRESHOLD_LENGTH; // Use constant
+		history.filter((m) => m.role === 'user').length <= 1 || currentMainTransactions.length === 0;
+	const isShortEnough = message.length < BULK_DATA_THRESHOLD_LENGTH;
 
 	if (!looksLikeTxn || !isFirstMeaningfulInput || !isShortEnough) {
-		return { handled: false };
+		return { handled: false }; // Let other handlers try
 	}
 
 	console.log('[InitialDataHandler] Handling initial (non-bulk) transaction data.');
@@ -56,57 +58,73 @@ export async function handleInitialData(
 
 	try {
 		const today = new Date().toISOString().split('T')[0];
-		// NOTE: Ensure getExtractionPrompt accepts two arguments if needed by its definition
-		const extractionPrompt = getExtractionPrompt(message, today); // Pass today string if required
+		const extractionPrompt = getExtractionPrompt(message, today);
 		const messages = [
 			{ role: 'system', content: getSystemPrompt(today) },
 			{ role: 'user', content: extractionPrompt }
 		];
 
 		const aiResponse = await deepseekChat(messages, { temperature: 0.2 });
-		// NOTE: Ensure parseJsonFromAiResponse is defined and exported from helpers
-		let parsedTransactions: Transaction[] | null = parseJsonFromAiResponse(aiResponse);
 
-		if (!parsedTransactions) {
-			throw new Error('AI did not return valid JSON.');
-		}
+		// --- PARSE AND VALIDATE RESPONSE (Similar to handleExtraction) ---
+        let parsedData: unknown = parseJsonFromAiResponse(aiResponse);
+        let parsedTransactions: Transaction[];
+
+        if (parsedData && typeof parsedData === 'object' && 'transactions' in parsedData && Array.isArray(parsedData.transactions)) {
+            parsedTransactions = parsedData.transactions as Transaction[];
+        } else if (Array.isArray(parsedData)) {
+            parsedTransactions = parsedData as Transaction[];
+        } else {
+            console.warn('[InitialDataHandler] Failed to parse a valid transaction array from AI response. Parsed data:', parsedData);
+             if (aiResponse && typeof aiResponse === 'string' && !aiResponse.trim().startsWith('{') && !aiResponse.trim().startsWith('[')) {
+                 console.log('[InitialDataHandler] AI response was text, letting normal handler try.');
+                 // If it's text, maybe it's not initial data after all? Let other handlers try.
+                 conversationStore._updateStatus(''); // Clear status
+                 return { handled: false };
+            }
+            parsedTransactions = [];
+        }
+		// --- END PARSE AND VALIDATE ---
+
 
 		// Handle empty extraction result
 		if (parsedTransactions.length === 0) {
-			console.log('[InitialDataHandler] AI returned empty array, likely no transactions found.');
+			console.log('[InitialDataHandler] AI returned empty array or failed parse, no transactions found.');
+			// Add message directly via conversationStore helper
 			conversationStore._addMessage(
 				'assistant',
 				"I looked through the text but couldn't find any clear transactions to extract. Could you try phrasing it differently or providing more details?"
 			);
 			conversationStore._updateStatus('No transactions found', 100);
-			conversationStore._setProcessing(false); // Reset processing state
-			return { handled: true };
+            // Finish processing will be called by the main service, no need to set processing false here
+			return { handled: true }; // Handled, but no response needed from service
 		}
 
 		// Apply explicit direction if provided
-		// NOTE: Ensure applyExplicitDirection is defined and exported from helpers
 		let finalTransactions = applyExplicitDirection(parsedTransactions, explicitDirectionIntent);
 
-		// Add transactions to the store
-		// NOTE: Ensure _addTransactions method exists on conversationStore
-		conversationStore._addTransactions(finalTransactions);
-		// NOTE: Ensure _setLastExtractionResult method exists on conversationStore
-		conversationStore._setLastExtractionResult(finalTransactions, message, explicitDirectionIntent); // Store context
+		// *** Add transactions to the MAIN appStore ***
+		appStore.addTransactions(finalTransactions);
 
-		// Generate confirmation message
-		const confirmationMsg = `Okay, I've extracted ${finalTransactions.length} transaction(s). Does this look right? You can ask me to correct details or add more transactions.`;
+		// Store context in conversationStore
+		conversationStore._setLastExtractionResult(message); // Pass only message
+
+		// Generate confirmation message and add directly
+		const confirmationMsg = `Okay, I've extracted ${finalTransactions.length} transaction(s) and added them to the list. Does this look right? You can ask me to correct details or add more.`;
 		conversationStore._addMessage('assistant', confirmationMsg);
 		conversationStore._updateStatus('Initial extraction complete', 100);
-		conversationStore._setProcessing(false); // Reset processing state
+        // Finish processing will be called by the main service
 
-		return { handled: true };
+		return { handled: true }; // Handled, no response needed from service
+
 	} catch (error) {
 		console.error('[InitialDataHandler] Error during initial extraction:', error);
-		// NOTE: Ensure getFallbackResponse signature matches usage (typically takes 0 or 1 arg)
-		const errorMsg = getFallbackResponse(error instanceof Error ? error : undefined); // Removed second argument
+		const errorMsg = getFallbackResponse(error instanceof Error ? error : undefined);
+		// Add error message directly
 		conversationStore._addMessage('assistant', errorMsg);
 		conversationStore._updateStatus('Error during extraction');
-		conversationStore._setProcessing(false); // Reset processing state
+        // Finish processing will be called by the main service
+
 		return { handled: true }; // Handled the attempt, but failed
 	}
 }

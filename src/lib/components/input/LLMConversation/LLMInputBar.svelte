@@ -2,27 +2,24 @@
 	import { get } from 'svelte/store';
 	import { onDestroy } from 'svelte';
 
-	// Import service functions (assuming they use appStore internally)
+	// Import service functions
 	import {
 		sendMessage,
-		generateSummary,
-		completeAndClear,
-		abortAndClear
+		// generateSummary, // Removed - No longer triggered here
+		// completeAndClear, // Removed - Obsolete
+		abortAndClear // Service needs internal refactoring
 	} from '$lib/services/ai/conversation/conversationService';
 
-	// --- REMOVE adapter import for addTransactions ---
-	// import { addTransactions } from '$lib/stores';
+	// Import appStore directly
+	import { appStore } from '$lib/stores/AppStore';
 
-	// --- Import appStore directly ---
-	import { appStore } from '$lib/stores/AppStore'; // Ensure this is present
-
-	import type { Transaction } from '$lib/stores/types';
+	// Transaction type import likely not needed here anymore
+	// import type { Transaction } from '$lib/stores/types';
 
 	let userInput = '';
 	let submitTimeoutId: ReturnType<typeof setTimeout> | null = null;
 	let isSubmitting = false;
 
-	// debounceSubmit function... (no changes needed)
 	function debounceSubmit() {
 		if (isSubmitting) {
 			console.log('[LLMInputBar] Debounce: Submit already in progress.');
@@ -35,40 +32,28 @@
 		}, 300);
 	}
 
-	// handleSubmit function... (no changes needed, uses service)
 	function handleSubmit() {
 		const currentInput = userInput.trim();
+		// Read isProcessing directly from appStore state
 		const processing = get(appStore).conversation.isProcessing;
 		if (!currentInput || processing) {
-			// ... (error logging) ...
-			isSubmitting = false;
+			// console.warn('[LLMInputBar] Submit ignored: Input empty or AI processing.');
+			isSubmitting = false; // Reset flag if submit is blocked
 			if (submitTimeoutId) clearTimeout(submitTimeoutId);
 			return;
 		}
-		sendMessage(currentInput);
+		sendMessage(currentInput); // Service handles adding/updating appStore.transactions
 		userInput = '';
+		// isSubmitting will be reset by the timeout or if processing starts
 	}
 
-	// handleComplete function... (Updated action call)
-	function handleComplete() {
-		if (get(appStore).conversation.isProcessing) return;
-		const txns = completeAndClear(); // Service call
-		if (txns?.length > 0) {
-			// Check if txns is truthy and has length
-			// --- Call appStore action directly ---
-			appStore.addTransactions(txns);
-		} else {
-			console.warn('[LLMInputBar] completeAndClear service returned no transactions.');
-		}
-	}
+	// --- REMOVED handleComplete function ---
 
-	// requestSummary function... (no changes needed, uses service)
-	function requestSummary() {
-		if (get(appStore).conversation.isProcessing) return;
-		generateSummary();
-	}
+	// --- REMOVED requestSummary function ---
 
-	// handleCancel function... (no changes needed, uses service)
+	// handleCancel function calls abortAndClear service
+	// Note: abortAndClear service itself needs refactoring internally
+	// to only clear messages/state, not extractedTransactions.
 	function handleCancel() {
 		abortAndClear();
 		userInput = '';
@@ -80,8 +65,9 @@
 		if (submitTimeoutId) clearTimeout(submitTimeoutId);
 	});
 
-	// Reactive variables deriving from appStore... (no changes needed)
-	$: extractedCount = $appStore.conversation.extractedTransactions.length;
+	// --- REMOVED extractedCount reactive variable ---
+
+	// Keep isProcessingValue for disabling input/button
 	$: isProcessingValue = $appStore.conversation.isProcessing;
 </script>
 
@@ -95,45 +81,26 @@
 			on:keydown={(e) => {
 				if (e.key === 'Enter' && !e.shiftKey) {
 					e.preventDefault();
-					debounceSubmit(); // Use debounced submit
+					debounceSubmit();
 				}
 			}}
 			disabled={isProcessingValue || isSubmitting}
 		></textarea>
 		<div class="button-container">
-			{#if extractedCount > 0}
-				<div class="action-buttons">
-					<button
-						type="button"
-						class="summary-button"
-						on:click={requestSummary}
-						disabled={isProcessingValue || isSubmitting}
-						title="Generate a summary of extracted transactions"
-					>
-						View Summary ({extractedCount})
-					</button>
-					<button
-						type="button"
-						class="complete-button"
-						on:click={handleComplete}
-						disabled={isProcessingValue || isSubmitting}
-						title="Add extracted transactions to the main list and clear chat"
-					>
-						Use {extractedCount} Transaction{extractedCount !== 1 ? 's' : ''}
-					</button>
-					<button
-						type="button"
-						class="cancel-button"
-						title="Clear conversation and extracted data"
-						on:click={handleCancel}
-						disabled={isProcessingValue || isSubmitting}
-					>
-						Clear Chat
-					</button>
-				</div>
-			{/if}
+			<!-- Removed action-buttons div and Summary/Complete buttons -->
 			<button
 				type="button"
+				class="cancel-button"
+				title="Clear conversation history"
+				on:click={handleCancel}
+				disabled={isProcessingValue || isSubmitting}
+			>
+				Clear Chat
+			</button>
+
+			<button
+				type="button"
+				class="send-button"
 				on:click={debounceSubmit}
 				disabled={!userInput.trim() || isProcessingValue || isSubmitting}
 			>
@@ -144,7 +111,6 @@
 </div>
 
 <style>
-	/* Styles remain the same */
 	.input-container {
 		padding: 10px 15px;
 		border-top: 1px solid #ddd;
@@ -166,7 +132,7 @@
 		line-height: 1.4;
 		transition:
 			border-color 0.2s,
-			box-shadow 0.2s; /* Added transition */
+			box-shadow 0.2s;
 	}
 	textarea:disabled {
 		background-color: #e9ecef;
@@ -179,21 +145,14 @@
 	}
 	.button-container {
 		display: flex;
-		justify-content: space-between;
+		justify-content: space-between; /* Space between Clear and Send */
 		align-items: center;
-		flex-wrap: wrap;
+		flex-wrap: wrap; /* Allow wrapping if needed */
 		gap: 8px;
 	}
-	.action-buttons {
-		display: flex;
-		gap: 8px;
-		flex-wrap: wrap;
-		flex-grow: 1; /* Allow action buttons to take space */
-		justify-content: flex-start; /* Align action buttons left */
-	}
+	/* Removed .action-buttons styles */
 	button {
 		padding: 8px 15px;
-		background-color: #3498db;
 		color: white;
 		border: none;
 		border-radius: 20px;
@@ -201,75 +160,62 @@
 		font-size: 14px;
 		transition:
 			background-color 0.2s,
-			opacity 0.2s; /* Added opacity */
+			opacity 0.2s;
 		white-space: nowrap;
-		margin-top: 0; /* Reset margin */
-		line-height: 1.4; /* Ensure consistent height */
-		position: relative; /* For loading dots */
-		overflow: hidden; /* Hide dots initially */
+		line-height: 1.4;
+		position: relative;
+		overflow: hidden;
 	}
 	button:hover:not(:disabled) {
-		background-color: #2980b9;
+		filter: brightness(90%); /* Slightly darken on hover */
 	}
 	button:disabled {
-		background-color: #bdc3c7;
+		background-color: #bdc3c7 !important; /* Use important to override specifics */
 		cursor: not-allowed;
 		opacity: 0.7;
 	}
 	.loading-dots {
-		/* Simple dots, improve if needed */
 		display: inline-block;
 		margin-left: 4px;
 	}
-	.summary-button {
-		background-color: #9b59b6;
-	}
-	.summary-button:hover:not(:disabled) {
-		background-color: #8e44ad;
-	}
-	.complete-button {
-		background-color: #2ecc71;
-	}
-	.complete-button:hover:not(:disabled) {
-		background-color: #27ae60;
-	}
+	/* Removed .summary-button styles */
+	/* Removed .complete-button styles */
 	.cancel-button {
 		background-color: #e74c3c;
+		/* margin-right: auto; */ /* Uncomment if Clear should be pushed left */
 	}
 	.cancel-button:hover:not(:disabled) {
 		background-color: #c0392b;
 	}
-	/* Specific style for the main Send button */
-	button[type='button']:last-child {
-		/* Target the last button, assuming it's Send */
+
+	.send-button {
+		/* Specific class for the Send button */
+		background-color: #3498db;
 		margin-left: auto; /* Push Send button to the right */
-		min-width: 80px;
-		background-color: #3498db; /* Ensure it has the default blue */
+		min-width: 80px; /* Keep minimum width */
 	}
-	button[type='button']:last-child:hover:not(:disabled) {
+	.send-button:hover:not(:disabled) {
 		background-color: #2980b9;
 	}
 
 	@media (max-width: 600px) {
 		.button-container {
-			flex-direction: column;
-			align-items: stretch; /* Make buttons full width */
-			gap: 10px; /* Add gap for stacked buttons */
+			/* Keep row layout, but allow stacking if needed via flex-wrap */
+			/* Or force column: */
+			/* flex-direction: column;
+			/* align-items: stretch; */
+			gap: 10px;
 		}
-		.action-buttons {
-			order: 2; /* Show action buttons below Send */
-			justify-content: center; /* Center action buttons when stacked */
-			width: 100%; /* Ensure action buttons container takes width */
+		/* Adjust button order/width for mobile if needed */
+		.cancel-button {
+			/* Example: Make it take less space if needed */
+			flex-grow: 1;
 		}
-		.action-buttons button {
-			flex-grow: 1; /* Allow action buttons to grow */
-			text-align: center;
-		}
-		button[type='button']:last-child {
-			/* Send button */
-			order: 1; /* Show Send button first */
-			margin-left: 0; /* Reset margin */
-			width: 100%; /* Make send button full width */
+		.send-button {
+			/* Example: Ensure it doesn't shrink too much */
+			/* flex-grow: 2; */
+			margin-left: 0; /* Reset margin if stacking vertically */
+			/* width: 100%; */ /* Make full width if stacking vertically */
 		}
 	}
 </style>

@@ -9,7 +9,7 @@ import {
 	parseJsonFromAiResponse,
 	textLooksLikeTransaction
 } from '$lib/utils/helpers';
-import { extractedTransactions } from '../../conversation/conversationDerivedStores';
+import { extractedTransactions } from '../conversationDerivedStores';
 import { conversationStore } from '../conversationStore';
 
 /**

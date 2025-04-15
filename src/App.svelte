@@ -1,42 +1,32 @@
 <script lang="ts">
 	import LLMWithDataLayout from '$lib/components/input/LLMConversation/LLMWithDataLayout.svelte';
+	// Import the Analysis component
+	import FinancialAnalysis from '$lib/components/analysis/FinancialAnalysis.svelte';
 	import { onMount } from 'svelte';
 
-	// --- REMOVE Adapter Imports ---
-	// import {
-	// 	transactions,
-	// 	clearTransactions,
-	// 	isProcessing,
-	// 	categories
-	// } from '$lib/stores';
-
-	// --- USE Direct appStore Import ---
+	// Import appStore directly
 	import { appStore } from '$lib/stores/AppStore';
-	import { get } from 'svelte/store'; // Import get if needed for non-reactive reads
+	import { get } from 'svelte/store';
 
-	// Import services
-	import { exportAsJson, generateHTMLReport } from '$lib/services/exporter';
-	// Assuming 'initialize' uses appStore internally now
+	// Import necessary services
+	import { generateHTMLReport } from '$lib/services/exporter';
 	import { initialize } from '$lib/services/ai/conversation/conversationService';
 
 	onMount(() => {
-		// Call service function (assumes it interacts with appStore)
-		initialize();
+		initialize(); // Initialize conversation service
+		// Trigger initial analysis if needed
+		if (get(appStore).transactions.length > 0) {
+			appStore.runFinancialAnalysis();
+		}
 	});
 
-	// Updated handler for report generation using direct store access
+	// Handler for report generation
 	function handleGenerateReport() {
-		// Read state directly using get() or rely on $appStore in template calls
-		const currentTransactions = get(appStore).transactions; // Or use $appStore.transactions below
-		const currentCategories = get(appStore).categories; // Or use $appStore.categories below
-		const currentTotals = appStore.getCategoryTotals(); // Call selector method
-
-		// Pass the actual arrays/objects
+		const currentTransactions = get(appStore).transactions;
+		const currentCategories = get(appStore).categories;
+		const currentTotals = appStore.getCategoryTotals();
 		generateHTMLReport(currentTransactions, currentTotals, currentCategories);
 	}
-
-	// Optional: If you need reactive updates *within the script*
-	// $: console.log('AI Processing (direct):', $appStore.conversation.isProcessing);
 </script>
 
 <main class="page-container">
@@ -48,37 +38,21 @@
 
 	<LLMWithDataLayout />
 
+	<FinancialAnalysis />
+
 	<div class="global-actions">
-		<h2>Global Actions (Main List)</h2>
-		<button
-			on:click={() => exportAsJson($appStore.transactions)}
-			disabled={$appStore.transactions.length === 0 &&
-				$appStore.conversation.extractedTransactions.length === 0}
-			class="action-button export-action"
-		>
-			Export JSON (All)
-		</button>
+		<h2>Actions</h2>
 		<button
 			on:click={handleGenerateReport}
-			disabled={$appStore.transactions.length === 0 &&
-				$appStore.conversation.extractedTransactions.length === 0}
+			disabled={$appStore.transactions.length === 0}
 			class="action-button primary-action"
 		>
-			Generate HTML Report (All)
-		</button>
-		<button
-			on:click={appStore.clearTransactions}
-			disabled={$appStore.transactions.length === 0 &&
-				$appStore.conversation.extractedTransactions.length === 0}
-			class="action-button danger-action"
-		>
-			Clear All Transactions
+			Generate HTML Report
 		</button>
 	</div>
 </main>
 
 <style>
-	/* ... existing styles ... */
 	.processing-indicator {
 		text-align: center;
 		padding: 5px;
@@ -135,24 +109,11 @@
 		cursor: not-allowed;
 	}
 
+	/* Kept primary, removed others as buttons were removed */
 	.primary-action {
 		background-color: #2ecc71;
 	}
 	.primary-action:hover:not(:disabled) {
 		background-color: #27ae60;
-	}
-
-	.danger-action {
-		background-color: #e74c3c;
-	}
-	.danger-action:hover:not(:disabled) {
-		background-color: #c0392b;
-	}
-
-	.export-action {
-		background-color: #f39c12;
-	}
-	.export-action:hover:not(:disabled) {
-		background-color: #d35400;
 	}
 </style>

@@ -1,6 +1,15 @@
 // src/lib/stores/AppStore.ts
 import { writable, get, derived, type Writable } from 'svelte/store';
 import { v4 as uuidv4 } from 'uuid';
+
+// --- Import Analytics Service ---
+import {
+	calculateFinancialSummary,
+	detectAnomalies,
+	predictFutureTransactions
+} from '$lib/services/analytics'; // Adjust path if needed
+import { isLLMAvailable } from '$lib/services/ai/deepseek-client'; // Check LLM status
+
 import type {
 	AppState,
 	Transaction,
@@ -9,16 +18,18 @@ import type {
 	UIState,
 	FilterState,
 	SortField,
-	ConversationState, // Import ConversationState
-	ConversationMessage, // Import ConversationMessage
-	BulkProcessingState, // Import BulkProcessingState
-	ProcessingChunk, // Import ProcessingChunk
-	ChunkStatus, // Import ChunkStatus
-	UserMood // Import UserMood
-} from './types'; // Make sure types.ts exports all these
+	ConversationState,
+	ConversationMessage,
+	BulkProcessingState,
+	ProcessingChunk,
+	ChunkStatus,
+	UserMood,
+	// --- Import Analysis Types ---
+	AnalysisState
+} from './types';
 
-// --- Initial State ---
-// Define categories directly here or import from a config file
+// --- Initial State Definitions ---
+
 const initialCategories: Category[] = [
 	'PayPal Transfers',
 	'Business Income - Austen Cloud Performance',
@@ -31,6 +42,7 @@ const initialCategories: Category[] = [
 	'Other / Uncategorized'
 ];
 
+// Updated: Remove extractedTransactions
 const initialConversationState: ConversationState = {
 	messages: [
 		{
@@ -43,7 +55,7 @@ const initialConversationState: ConversationState = {
 	status: '',
 	isProcessing: false,
 	progress: 0,
-	extractedTransactions: [],
+	// extractedTransactions: [], // REMOVED
 	userMood: 'unknown',
 	_internal: {
 		initialPromptSent: false,
@@ -54,15 +66,26 @@ const initialConversationState: ConversationState = {
 	}
 };
 
+// Updated: Remove tempExtractedTransactions
 const initialBulkProcessingState: BulkProcessingState = {
 	processingChunks: [],
 	processingProgress: 0,
-	isBulkProcessing: false,
-	tempExtractedTransactions: []
+	isBulkProcessing: false
+	// tempExtractedTransactions: [] // REMOVED
 };
 
+// --- NEW: Initial Analysis State ---
+const initialAnalysisState: AnalysisState = {
+	summary: null,
+	anomalies: null,
+	predictions: null,
+	loading: false,
+	error: null
+};
+
+// Updated: Add analysis slice
 const initialState: AppState = {
-	transactions: [], // Main transactions list
+	transactions: [],
 	categories: initialCategories,
 	ui: {
 		loading: false,
@@ -78,14 +101,16 @@ const initialState: AppState = {
 		sortDirection: 'desc'
 	},
 	conversation: initialConversationState,
-	bulkProcessing: initialBulkProcessingState
+	bulkProcessing: initialBulkProcessingState,
+	analysis: initialAnalysisState // Added
 };
 
-// --- The Central Store ---
+// --- Central Store ---
 const appStateStore: Writable<AppState> = writable(initialState);
 
-// --- Helper for Temporary Messages ---
+// --- Helpers ---
 function showTemporarySuccessMessage(duration = 3000) {
+	// ... (implementation remains the same) ...
 	appStateStore.update((state) => ({
 		...state,
 		ui: { ...state.ui, showSuccessMessage: true }
@@ -98,33 +123,44 @@ function showTemporarySuccessMessage(duration = 3000) {
 	}, duration);
 }
 
+// Debounce analysis runs slightly
+let analysisTimeout: ReturnType<typeof setTimeout> | null = null;
+const ANALYSIS_DEBOUNCE_MS = 500;
+
+function triggerAnalysisRun() {
+	if (analysisTimeout) {
+		clearTimeout(analysisTimeout);
+	}
+	analysisTimeout = setTimeout(() => {
+		// Check if the store object is fully initialized before calling methods on it
+		if (appStore && typeof appStore.runFinancialAnalysis === 'function') {
+			console.log('[AppStore] Debounced: Running financial analysis...');
+			appStore.runFinancialAnalysis();
+		} else {
+			console.warn('[AppStore] Debounced: appStore or runFinancialAnalysis not ready yet.');
+		}
+	}, ANALYSIS_DEBOUNCE_MS);
+}
+
 // --- Exported Store Object ---
-// We export an object containing the subscribe method and all actions/selectors
 export const appStore = {
-	// Provide read-only access to the store's value
 	subscribe: appStateStore.subscribe,
 
 	// === SELECTORS / COMPUTED VALUES ===
-	// Use `get(appStateStore)` to read the current state inside these functions
-
-	// Get a specific transaction by ID
 	getTransactionById: (id: string | null): Transaction | null => {
+		// ... (implementation remains the same) ...
 		if (!id) return null;
 		const state = get(appStateStore);
 		return state.transactions.find((t) => t.id === id) || null;
 	},
-
-	// Get computed sorted and filtered transactions
 	getSortedFilteredTransactions: (): Transaction[] => {
+		// ... (implementation remains the same, depends only on transactions and filters) ...
 		const state = get(appStateStore);
 		const { transactions, filters } = state;
-
-		// Filtering logic
 		let filtered =
 			filters.category === 'all'
 				? transactions
 				: transactions.filter((t) => t.category === filters.category);
-
 		if (filters.searchTerm) {
 			const term = filters.searchTerm.toLowerCase();
 			filtered = filtered.filter(
@@ -136,31 +172,26 @@ export const appStore = {
 					(t.type || '').toLowerCase().includes(term)
 			);
 		}
-
-		// Sorting logic
 		return [...filtered].sort((a, b) => {
 			let valueA: any, valueB: any;
-
+			// ... (sorting logic) ...
 			switch (filters.sortField) {
 				case 'amount':
-					valueA = a.amount; // Amount is already number
+					valueA = a.amount;
 					valueB = b.amount;
 					break;
 				case 'date':
-					// Robust date comparison
 					try {
 						const dateA = new Date(a.date).getTime();
 						const dateB = new Date(b.date).getTime();
-						// Handle invalid dates by treating them as minimal values or comparing strings
 						valueA = isNaN(dateA) ? 0 : dateA;
 						valueB = isNaN(dateB) ? 0 : dateB;
 						if (isNaN(dateA) && isNaN(dateB)) {
-							// If both invalid, compare original strings
 							valueA = a.date;
 							valueB = b.date;
 						}
 					} catch {
-						valueA = a.date; // Fallback to string comparison on error
+						valueA = a.date;
 						valueB = b.date;
 					}
 					break;
@@ -173,128 +204,139 @@ export const appStore = {
 					valueB = (b.category || '').toLowerCase();
 					break;
 				default:
-					valueA = a[filters.sortField]; // Should not happen with TS
+					valueA = a[filters.sortField];
 					valueB = b[filters.sortField];
 			}
-
-			// Comparison logic
 			const comparison = valueA < valueB ? -1 : valueA > valueB ? 1 : 0;
 			return filters.sortDirection === 'asc' ? comparison : -comparison;
 		});
 	},
-
-	// Get computed category totals
 	getCategoryTotals: (): CategoryTotals => {
+		// ... (implementation remains the same, depends only on transactions and categories) ...
 		const state = get(appStateStore);
 		const totals: CategoryTotals = {};
-
-		// Initialize totals for all known categories
 		state.categories.forEach((cat) => {
 			totals[cat] = 0;
 		});
-
-		// Sum amounts from the main transactions list
 		state.transactions.forEach((txn) => {
 			if (txn.category && totals.hasOwnProperty(txn.category)) {
-				const amount = txn.amount || 0; // Amount is number
-				// Use direction for +/-
+				const amount = txn.amount || 0;
 				const adjustedAmount = txn.direction === 'out' ? -Math.abs(amount) : Math.abs(amount);
 				totals[txn.category] += adjustedAmount;
-			} else if (txn.category) {
-				// Handle case where a transaction has a category not in the initial list (optional)
-				// console.warn(`Transaction category "${txn.category}" not in predefined list.`);
-				// totals[txn.category] = (totals[txn.category] || 0) + (txn.direction === 'out' ? -Math.abs(amount) : Math.abs(amount));
 			}
 		});
-
 		return totals;
 	},
 
-	// === ACTIONS (methods to modify state) ===
+	// === ACTIONS ===
 
-	// --- Transaction Actions ---
+	// --- Transaction Actions (Now Trigger Analysis) ---
 	addTransactions: (newTransactions: Transaction[]) => {
 		if (!Array.isArray(newTransactions) || newTransactions.length === 0) return;
+		let itemsAdded = false;
 		appStateStore.update((state) => {
-			// Optional: Add de-duplication logic here if needed
+			const currentIds = new Set(state.transactions.map((t) => t.id));
 			const uniqueNewTransactions = newTransactions.filter(
-				(newTxn) => !state.transactions.some((existingTxn) => existingTxn.id === newTxn.id)
+				(newTxn) => newTxn.id && !currentIds.has(newTxn.id) // Ensure newTxn has an id
 			);
-			return {
-				...state,
-				transactions: [...state.transactions, ...uniqueNewTransactions]
-			};
+			if (uniqueNewTransactions.length > 0) {
+				itemsAdded = true;
+				return {
+					...state,
+					transactions: [...state.transactions, ...uniqueNewTransactions]
+				};
+			}
+			return state; // Return unchanged state if no unique items added
 		});
-		if (newTransactions.length > 0) {
+		if (itemsAdded) {
 			showTemporarySuccessMessage();
+			triggerAnalysisRun(); // Trigger analysis
 		}
 	},
-
 	clearTransactions: () => {
 		if (confirm('Are you sure you want to clear all transactions? This cannot be undone.')) {
 			appStateStore.update((state) => ({ ...state, transactions: [] }));
+			triggerAnalysisRun(); // Trigger analysis
 		}
 	},
-
 	deleteTransaction: (id: string) => {
-		appStateStore.update((state) => ({
-			...state,
-			transactions: state.transactions.filter((t) => t.id !== id),
-			// Also ensure it's deselected if it was the selected one
-			ui: {
-				...state.ui,
-				selectedTransactionId: state.ui.selectedTransactionId === id ? null : state.ui.selectedTransactionId,
-				showTransactionDetails: state.ui.selectedTransactionId === id ? false : state.ui.showTransactionDetails
-			}
-		}));
+		let itemDeleted = false;
+		appStateStore.update((state) => {
+			const initialLength = state.transactions.length;
+			const newTransactions = state.transactions.filter((t) => t.id !== id);
+			itemDeleted = newTransactions.length < initialLength;
+			return {
+				...state,
+				transactions: newTransactions,
+				ui: {
+					...state.ui,
+					selectedTransactionId:
+						state.ui.selectedTransactionId === id ? null : state.ui.selectedTransactionId,
+					showTransactionDetails:
+						state.ui.selectedTransactionId === id ? false : state.ui.showTransactionDetails
+				}
+			};
+		});
+		if (itemDeleted) {
+			triggerAnalysisRun(); // Trigger analysis
+		}
 	},
-
 	updateTransaction: (updatedTransaction: Transaction) => {
+		let itemUpdated = false;
 		appStateStore.update((state) => {
 			const index = state.transactions.findIndex((t) => t.id === updatedTransaction.id);
 			if (index !== -1) {
+				itemUpdated = true;
 				const updatedTransactions = [...state.transactions];
 				updatedTransactions[index] = updatedTransaction;
 				return { ...state, transactions: updatedTransactions };
 			}
-			return state; // Return unchanged state if ID not found
+			return state;
 		});
+		if (itemUpdated) {
+			triggerAnalysisRun(); // Trigger analysis
+		}
 	},
-
 	assignCategory: (transactionId: string, category: Category) => {
+		let itemUpdated = false;
 		appStateStore.update((state) => {
 			const index = state.transactions.findIndex((t) => t.id === transactionId);
 			if (index !== -1) {
+				itemUpdated = true;
 				const updatedTransactions = [...state.transactions];
 				updatedTransactions[index] = { ...updatedTransactions[index], category: category };
 				return { ...state, transactions: updatedTransactions };
 			}
 			return state;
 		});
+		if (itemUpdated) {
+			triggerAnalysisRun(); // Trigger analysis
+		}
 	},
-
 	addNotes: (transactionId: string, notes: string) => {
+		let itemUpdated = false;
 		appStateStore.update((state) => {
 			const index = state.transactions.findIndex((t) => t.id === transactionId);
 			if (index !== -1) {
+				itemUpdated = true;
 				const updatedTransactions = [...state.transactions];
 				updatedTransactions[index] = { ...updatedTransactions[index], notes: notes };
 				return { ...state, transactions: updatedTransactions };
 			}
 			return state;
 		});
+		if (itemUpdated) {
+			triggerAnalysisRun(); // Trigger analysis (optional, notes might not affect analysis)
+		}
 	},
 
 	// --- UI Actions ---
 	setLoading: (loading: boolean) => {
-		appStateStore.update((state) => ({
-			...state,
-			ui: { ...state.ui, loading }
-		}));
+		// ... (implementation remains the same) ...
+		appStateStore.update((state) => ({ ...state, ui: { ...state.ui, loading } }));
 	},
-
-	// Handle selecting/deselecting for the modal
 	selectTransactionForDetails: (transactionId: string | null) => {
+		// ... (implementation remains the same) ...
 		appStateStore.update((state) => {
 			const selectedTxn = transactionId
 				? state.transactions.find((t) => t.id === transactionId)
@@ -305,69 +347,49 @@ export const appStore = {
 					...state.ui,
 					selectedTransactionId: transactionId,
 					showTransactionDetails: transactionId !== null,
-					// Pre-fill modal category selector if a transaction is selected
-					currentCategory: selectedTxn
-						? selectedTxn.category
-						: state.ui.currentCategory // Keep current if deselecting
+					currentCategory: selectedTxn ? selectedTxn.category : state.ui.currentCategory
 				}
 			};
 		});
 	},
-
-	// Explicitly close the modal
 	closeTransactionDetails: () => {
+		// ... (implementation remains the same) ...
 		appStateStore.update((state) => ({
 			...state,
-			ui: {
-				...state.ui,
-				showTransactionDetails: false,
-				selectedTransactionId: null
-			}
+			ui: { ...state.ui, showTransactionDetails: false, selectedTransactionId: null }
 		}));
 	},
-
-	// Update the category selection *within* the modal
 	setModalCategory: (category: Category) => {
-		appStateStore.update((state) => ({
-			...state,
-			ui: { ...state.ui, currentCategory: category }
-		}));
+		// ... (implementation remains the same) ...
+		appStateStore.update((state) => ({ ...state, ui: { ...state.ui, currentCategory: category } }));
 	},
 
 	// --- Filter Actions ---
 	setFilterCategory: (category: 'all' | Category) => {
-		appStateStore.update((state) => ({
-			...state,
-			filters: { ...state.filters, category }
-		}));
+		// ... (implementation remains the same) ...
+		appStateStore.update((state) => ({ ...state, filters: { ...state.filters, category } }));
 	},
-
 	setSearchTerm: (searchTerm: string) => {
-		appStateStore.update((state) => ({
-			...state,
-			filters: { ...state.filters, searchTerm }
-		}));
+		// ... (implementation remains the same) ...
+		appStateStore.update((state) => ({ ...state, filters: { ...state.filters, searchTerm } }));
 	},
-
 	toggleSort: (field: SortField) => {
+		// ... (implementation remains the same) ...
 		appStateStore.update((state) => {
 			const currentSortField = state.filters.sortField;
 			const currentSortDirection = state.filters.sortDirection;
 			const newSortDirection =
-				currentSortField === field ? (currentSortDirection === 'asc' ? 'desc' : 'asc') : 'asc'; // Default asc for new field
+				currentSortField === field ? (currentSortDirection === 'asc' ? 'desc' : 'asc') : 'asc';
 			return {
 				...state,
-				filters: {
-					...state.filters,
-					sortField: field,
-					sortDirection: newSortDirection
-				}
+				filters: { ...state.filters, sortField: field, sortDirection: newSortDirection }
 			};
 		});
 	},
 
 	// --- Conversation Actions ---
 	addConversationMessage: (role: 'user' | 'assistant', content: string) => {
+		// ... (implementation remains the same) ...
 		appStateStore.update((state) => ({
 			...state,
 			conversation: {
@@ -376,73 +398,36 @@ export const appStore = {
 			}
 		}));
 	},
-
 	setConversationStatus: (status: string, progress?: number) => {
+		// ... (implementation remains the same) ...
 		appStateStore.update((state) => ({
 			...state,
 			conversation: {
 				...state.conversation,
 				status: status,
-				progress: progress !== undefined ? Math.max(0, Math.min(100, progress)) : state.conversation.progress
+				progress:
+					progress !== undefined
+						? Math.max(0, Math.min(100, progress))
+						: state.conversation.progress
 			}
 		}));
 	},
-
 	setConversationProcessing: (isProcessing: boolean) => {
+		// ... (implementation remains the same) ...
 		appStateStore.update((state) => ({
 			...state,
 			conversation: {
 				...state.conversation,
 				isProcessing: isProcessing,
-				// Reset progress/status slightly later or based on specific logic
 				status: isProcessing ? state.conversation.status : '',
 				progress: isProcessing ? state.conversation.progress : 0
 			}
 		}));
 	},
-
-	// Add/update extracted transactions *within the conversation context*
-	updateConversationExtractedTransactions: (
-		transactions: Transaction[],
-		associatedMessage: string = '',
-		batchId: string | null = null
-	) => {
-		appStateStore.update((state) => ({
-			...state,
-			conversation: {
-				...state.conversation,
-				extractedTransactions: transactions,
-				_internal: {
-					...state.conversation._internal,
-					lastUserMessageText: associatedMessage,
-					lastExtractionBatchId: batchId
-				}
-			}
-		}));
-	},
-	appendConversationExtractedTransactions: (
-		newTransactions: Transaction[],
-		associatedMessage: string = '',
-		batchId: string | null = null
-	) => {
-		appStateStore.update((state) => ({
-			...state,
-			conversation: {
-				...state.conversation,
-				extractedTransactions: [
-					...state.conversation.extractedTransactions,
-					...newTransactions
-				],
-				_internal: {
-					...state.conversation._internal,
-					lastUserMessageText: associatedMessage,
-					lastExtractionBatchId: batchId
-				}
-			}
-		}));
-	},
-
+	// REMOVED: updateConversationExtractedTransactions
+	// REMOVED: appendConversationExtractedTransactions
 	setConversationClarificationNeeded: (needed: boolean, txnIds: string[]) => {
+		// ... (implementation remains the same) ...
 		appStateStore.update((state) => ({
 			...state,
 			conversation: {
@@ -455,24 +440,31 @@ export const appStore = {
 			}
 		}));
 	},
-
+	// Updated: No longer clears extractedTransactions as they don't exist here
 	resetConversation: () => {
 		appStateStore.update((state) => ({
 			...state,
-			conversation: initialConversationState // Reset to initial
+			// Reset only conversation fields, keep main transactions etc.
+			conversation: {
+				...initialConversationState, // Use initial state
+				messages: [
+					// Start with a fresh greeting maybe? Or keep history? Let's clear.
+					{
+						role: 'assistant',
+						content: 'Okay, starting fresh. How can I help you?',
+						timestamp: Date.now()
+					}
+				]
+			}
 		}));
-		// Add the initial greeting back after reset
-		appStore.addConversationMessage(
-			'assistant',
-			"Okay, starting fresh. How can I help you?"
-		);
 	},
 
 	// --- Bulk Processing Actions ---
 	initializeBulkChunks: (chunks: string[]) => {
+		// ... (implementation remains the same) ...
 		const initialChunks: ProcessingChunk[] = chunks.map((chunk, index) => ({
 			id: `chunk-${index}`,
-			text: chunk.substring(0, 50) + (chunk.length > 50 ? '...' : ''), // Short preview
+			text: chunk.substring(0, 50) + (chunk.length > 50 ? '...' : ''),
 			status: 'pending',
 			message: '',
 			transactionCount: 0
@@ -480,20 +472,18 @@ export const appStore = {
 		appStateStore.update((state) => ({
 			...state,
 			bulkProcessing: {
-				...state.bulkProcessing,
+				...initialBulkProcessingState,
 				processingChunks: initialChunks,
-				processingProgress: 0,
-				tempExtractedTransactions: [],
 				isBulkProcessing: true
 			}
 		}));
 	},
-
+	// Updated: No longer adds to tempExtractedTransactions
 	updateBulkChunkStatus: (
 		chunkIndex: number,
 		status: ChunkStatus,
 		message: string = '',
-		transactions: Transaction[] = []
+		transactions: Transaction[] = [] // Still accept txns to update count
 	) => {
 		appStateStore.update((state) => {
 			const chunks = [...state.bulkProcessing.processingChunks];
@@ -502,58 +492,113 @@ export const appStore = {
 					...chunks[chunkIndex],
 					status,
 					message,
-					transactionCount: transactions.length
+					transactionCount: transactions.length // Update count for UI
 				};
-
-				// Add successful transactions to the temporary list
-				const newTempTransactions =
-					status === 'success' && transactions.length > 0
-						? [...state.bulkProcessing.tempExtractedTransactions, ...transactions]
-						: state.bulkProcessing.tempExtractedTransactions;
-
-				// Recalculate overall progress
-				const completed = chunks.filter((c) => c.status === 'success' || c.status === 'error').length;
+				const completed = chunks.filter(
+					(c) => c.status === 'success' || c.status === 'error'
+				).length;
 				const progress = chunks.length > 0 ? Math.floor((completed / chunks.length) * 100) : 0;
-
 				return {
 					...state,
 					bulkProcessing: {
 						...state.bulkProcessing,
 						processingChunks: chunks,
-						tempExtractedTransactions: newTempTransactions,
 						processingProgress: progress
 					}
 				};
 			}
-			return state; // Return unchanged state if index is invalid
+			return state;
 		});
+		// Note: Analysis trigger now happens in addTransactions called by orchestrator
 	},
-
-	// Finalize bulk processing - moves temp txns to main list if successful
+	// Updated: No longer merges transactions, just resets UI state
 	finalizeBulkProcessing: (success: boolean) => {
 		appStateStore.update((state) => {
-			const finalTransactions = success
-				? [...state.transactions, ...state.bulkProcessing.tempExtractedTransactions]
-				: state.transactions; // Keep original if cancelled/failed
-
+			// Transactions were already added incrementally
+			// Only reset the bulk processing UI state
 			return {
 				...state,
-				transactions: finalTransactions, // Update main list
-				bulkProcessing: { // Reset bulk state
-					...initialBulkProcessingState // Use the defined initial state
-				}
+				bulkProcessing: { ...initialBulkProcessingState } // Reset to initial
 			};
 		});
-		if (success && get(appStateStore).bulkProcessing.tempExtractedTransactions.length > 0) {
-			showTemporarySuccessMessage(); // Show success if transactions were added
+		// No success message here, handled by addTransactions
+	},
+
+	// --- NEW Analysis Actions ---
+	setAnalysisLoading: (loading: boolean) => {
+		appStateStore.update((state) => ({
+			...state,
+			analysis: { ...state.analysis, loading, error: loading ? null : state.analysis.error } // Clear error when loading starts
+		}));
+	},
+	setAnalysisResults: (results: { summary: any; anomalies: any; predictions: any } | null) => {
+		appStateStore.update((state) => ({
+			...state,
+			analysis: {
+				...state.analysis,
+				summary: results?.summary ?? null,
+				anomalies: results?.anomalies ?? null,
+				predictions: results?.predictions ?? null,
+				loading: false,
+				error: null
+			}
+		}));
+	},
+	setAnalysisError: (error: string | null) => {
+		appStateStore.update((state) => ({
+			...state,
+			analysis: { ...state.analysis, error, loading: false }
+		}));
+	},
+	runFinancialAnalysis: async () => {
+		console.log('[AppStore] Running runFinancialAnalysis...'); // Log start
+		const state = get(appStateStore);
+		if (state.transactions.length === 0) {
+			console.log('[AppStore] No transactions, clearing analysis.');
+			appStore.setAnalysisResults(null); // Clear results if no transactions
+			return;
+		}
+		if (state.analysis.loading) {
+			console.log('[AppStore] Analysis already in progress, skipping.');
+			return; // Don't run multiple analyses concurrently
+		}
+
+		appStore.setAnalysisLoading(true);
+		try {
+			const currentTransactions = [...state.transactions]; // Use a snapshot
+			const llmCheck = await isLLMAvailable(); // Check LLM status
+
+			// Run calculations in parallel
+			const summaryPromise = calculateFinancialSummary(currentTransactions);
+			const anomaliesPromise = llmCheck
+				? detectAnomalies(currentTransactions)
+				: Promise.resolve({ anomalies: [] });
+			const predictionsPromise = llmCheck
+				? predictFutureTransactions(currentTransactions)
+				: Promise.resolve(null);
+
+			const [summaryResult, anomaliesResult, predictionsResult] = await Promise.all([
+				summaryPromise,
+				anomaliesPromise,
+				predictionsPromise
+			]);
+
+			console.log('[AppStore] Analysis calculations complete.');
+			appStore.setAnalysisResults({
+				summary: summaryResult,
+				anomalies: anomaliesResult,
+				predictions: predictionsResult
+			});
+		} catch (error) {
+			console.error('[AppStore] Error during financial analysis:', error);
+			appStore.setAnalysisError(error instanceof Error ? error.message : 'Unknown analysis error');
 		}
 	}
 };
 
-// --- Optional: Simple Derived Stores (for easy $ syntax in components) ---
-// These are thin wrappers around appStore.subscribe, selecting a slice.
-// You could place these here or in adapters.ts
-
-export const loading = derived(appStateStore, ($s) => $s.ui.loading);
-export const showSuccessMessage = derived(appStateStore, ($s) => $s.ui.showSuccessMessage);
-// Add others as needed...
+// Trigger initial analysis run if needed (e.g., if loading from storage)
+// queueMicrotask(() => {
+//     if (get(appStateStore).transactions.length > 0) {
+//         appStore.runFinancialAnalysis();
+//     }
+// });
