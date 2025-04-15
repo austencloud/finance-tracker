@@ -1,7 +1,7 @@
 // --- FILENAME: src/lib/services/ai/conversation/handlers/correction-handler.ts ---
 
 import { get } from 'svelte/store';
-import type { Transaction } from '$lib/types/transactionTypes';
+
 import { deepseekChat, getFallbackResponse } from '../../deepseek-client';
 import { getSystemPrompt } from '../../prompts'; // May need specific prompts
 import { parseJsonFromAiResponse } from '$lib/utils/helpers';

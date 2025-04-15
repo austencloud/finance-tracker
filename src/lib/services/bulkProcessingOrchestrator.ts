@@ -12,7 +12,7 @@ import { deepseekChat } from './ai/deepseek-client';
 import { getSystemPrompt, getExtractionPrompt } from './ai/prompts';
 import { parseJsonFromAiResponse, applyExplicitDirection } from '$lib/utils/helpers';
 import { llmChunkTransactions } from './ai/conversation/bulk/llm-chunking';
-import type { Transaction } from '$lib/types/transactionTypes';
+import type { Transaction } from '$lib/stores/types';
 
 /**
  * Main orchestrator function for bulk transaction processing

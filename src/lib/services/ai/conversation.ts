@@ -31,8 +31,8 @@ import { handleBulkDirectionCorrection } from './conversation/handlers/bulk-dire
 
 // --- NEW: Import orchestrator for re-extraction ---
 import { extractTransactionsFromText } from './extraction/orchestrator';
-import type { Category, Transaction } from '$lib/types/transactionTypes';
 import { enhancedBackgroundProcessing } from './conversation/bulk/processing';
+import type { Category, Transaction } from '$lib/stores/types';
 function getConversationState(): ConversationState {
 	return get(conversationStore as any) as ConversationState;
 }

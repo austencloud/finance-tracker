@@ -7,8 +7,8 @@
 	import { processBulkTransactions } from '$lib/services/bulkProcessingOrchestrator';
 	import { isBulkProcessing } from '$lib/stores/bulkProcessingStore';
 	import BulkProcessingUI from '../transactions/BulkProcessingUI.svelte';
-	import type { Transaction } from '$lib/types/transactionTypes';
 	import { isLLMAvailable } from '$lib/services/ai/deepseek-client';
+	import type { Transaction } from '$lib/stores/types';
 
 	// Input Mode State
 	type InputMode = 'standard' | 'aiChat';

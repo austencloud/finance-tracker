@@ -1,7 +1,7 @@
 // src/lib/services/ai/conversation/handlers/initial-data-handler.ts
 import { conversationMessages, extractedTransactions } from '../conversationDerivedStores';
 import { get } from 'svelte/store';
-import type { Transaction } from '$lib/types/transactionTypes';
+
 import { deepseekChat, getFallbackResponse } from '../../deepseek-client';
 import { getSystemPrompt, getExtractionPrompt } from '../../prompts';
 // Import necessary helpers
@@ -13,6 +13,7 @@ import {
 // Removed unused looksLikeBulkData import
 import { BULK_DATA_THRESHOLD_LENGTH } from '../constants'; // Import constant
 import { conversationStore } from '../conversationStore';
+import type { Transaction } from '$lib/stores/types';
 
 // Define a basic type for chat messages if not already imported
 interface ChatMessage {

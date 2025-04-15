@@ -1,11 +1,12 @@
 // src/lib/services/ai/conversation/handlers/count-correction-handler.ts
 import { get } from 'svelte/store';
-import type { Transaction } from '$lib/types/transactionTypes';
+
 import { deepseekChat, getFallbackResponse } from '../../deepseek-client';
 import { getSystemPrompt } from '../../prompts';
 import { applyExplicitDirection, parseJsonFromAiResponse } from '$lib/utils/helpers';
 import { conversationStore } from '../conversationStore'; // Import main store instance
 import { extractedTransactions, lastExtractionResult } from '../conversationDerivedStores'; // Import derived stores
+import type { Transaction } from '$lib/stores/types';
 
 /**
  * Handles user messages indicating the AI extracted the wrong number of transactions.

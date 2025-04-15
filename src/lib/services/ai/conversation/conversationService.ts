@@ -13,7 +13,6 @@ import {
 	isProcessing,
 	safeAddAssistantMessage
 } from './conversationDerivedStores';
-import type { Transaction } from '$lib/types/transactionTypes';
 import { handleMood } from './handlers/mood-handler';
 import { handleDirectionClarification } from './handlers/direction-clarification-handler';
 import { handleCountCorrection } from './handlers/count-correction-handler';
@@ -24,6 +23,7 @@ import { handleExtraction } from './handlers/extraction-handler';
 import { handleNormalResponse } from './handlers/normal-response-handler';
 import { handleBulkData } from './handlers/bulk-data-handler';
 import { handleInitialData } from './handlers/initial-data-handler';
+import type { Transaction } from '$lib/stores/types';
 
 const BULK_DIRECTION_ALL_IN_REGEX = /\b(all|these are all|mark all as)\s+(in|income|deposits?)\b/i;
 const BULK_DIRECTION_ALL_OUT_REGEX =

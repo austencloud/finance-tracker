@@ -1,6 +1,6 @@
 // src/lib/services/ai/conversation/handlers/fill-details-handler.ts
 import { get } from 'svelte/store';
-import type { Transaction } from '$lib/types/transactionTypes';
+
 import { deepseekChat, getFallbackResponse } from '../../deepseek-client';
 import { getExtractionPrompt, getSystemPrompt } from '../../prompts'; // May need specific prompts
 // NOTE: Ensure parseJsonFromAiResponse is defined and exported from helpers

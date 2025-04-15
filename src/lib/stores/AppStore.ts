@@ -5,9 +5,10 @@ import type {
 	UIState,
 	FilterState,
 	ConversationState,
-	BulkProcessingState
+	BulkProcessingState,
+    Transaction,
+    Category
 } from './types';
-import type { Transaction, Category } from '$lib/types/transactionTypes';
 import { categories } from './transactionStore';
 
 // Initial state - keeping this the same

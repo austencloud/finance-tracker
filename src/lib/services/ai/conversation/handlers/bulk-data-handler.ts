@@ -15,7 +15,7 @@ import { BULK_DATA_THRESHOLD_LENGTH } from '../constants';
 import { llmChunkTransactions } from '../bulk/llm-chunking';
 import { deduplicateTransactions, getCategoryBreakdown } from '../bulk/processing-helpers';
 import { categorizeTransaction } from '$lib/services/categorizer';
-import type { Transaction } from '$lib/types/transactionTypes';
+import type { Transaction } from '$lib/stores/types';
 
 // Categorizer (needed for local applyExplicitDirection)
 

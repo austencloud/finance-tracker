@@ -1,5 +1,5 @@
 // src/lib/services/ai/prompts.ts
-import type { Transaction } from '$lib/types/transactionTypes';
+import type { Transaction } from '$lib/stores/types';
 import { formatCurrency } from '$lib/utils/currency';
 
 /**

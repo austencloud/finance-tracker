@@ -3,7 +3,7 @@
 import { v4 as uuidv4 } from 'uuid'; // Import UUID
 import { resolveAndFormatDate } from '$lib/utils/date'; // Helper for parsing and formatting dates
 import { categorizeTransaction } from '../../categorizer'; // Helper for assigning categories (Adjust path as needed)
-import type { Transaction } from '$lib/types/transactionTypes';
+import type { Transaction } from '$lib/stores/types';
 
 /**
  * Quickly checks if a given text string contains common patterns

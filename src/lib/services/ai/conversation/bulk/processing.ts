@@ -1,6 +1,5 @@
 // src/lib/services/ai/conversation/bulk/processing.ts
 import { get } from 'svelte/store';
-import type { Transaction } from '$lib/types/transactionTypes';
 import { extractTransactionsFromText } from '../../extraction/orchestrator';
 // Import the NEW LLM-based chunking function
 import { llmChunkTransactions } from './llm-chunking';
@@ -20,6 +19,7 @@ import {
 
 import { isBulkData } from '../conversation-helpers';
 import { conversationStore } from '../conversationStore';
+import type { Transaction } from '$lib/stores/types';
 
 // Helper function to safely update store (avoiding type errors)
 function updateStatus(message: string, p0: number): void {

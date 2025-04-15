@@ -1,9 +1,10 @@
 // src/lib/services/ai/extraction/orchestrator.ts
-import type { Transaction } from '$lib/types/transactionTypes';
+
 import { deepseekGenerateJson, isLLMAvailable } from '../deepseek-client';
 import { getExtractionPrompt, getOptimizedExtractionPrompt } from '../prompts';
 import { enhancedLocalExtraction, extractBankStatementFormat } from './local-extractors';
 import { parseTransactionsFromLLMResponse } from './llm-parser';
+import type { Transaction } from '$lib/stores/types';
 
 // Simple cache (consider more robust caching if needed)
 const extractionCache = new Map<string, { timestamp: number; data: Transaction[] }>();

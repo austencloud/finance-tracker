@@ -1,5 +1,5 @@
 // src/lib/schemas/TransactionSchema.ts
-import type { Category } from '$lib/types/transactionTypes';
+import type { Category } from '$lib/stores/types';
 import { z } from 'zod';
 
 // Define categories explicitly for validation if needed, or use a broader string approach

@@ -1,6 +1,6 @@
 // src/lib/stores/bulkProcessingStore.ts
 import { writable, derived } from 'svelte/store';
-import type { Transaction } from '$lib/types/transactionTypes';
+import type { Transaction } from './types';
 
 export type ChunkStatus = 'pending' | 'processing' | 'success' | 'error';
 

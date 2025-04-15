@@ -1,5 +1,6 @@
 // src/lib/services/ai/conversation/bulk/processing-helpers.ts
-import type { Transaction } from '$lib/types/transactionTypes';
+
+import type { Transaction } from "$lib/stores/types";
 
 /**
  * Deduplicates transactions based on date, amount, and normalized description.

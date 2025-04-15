@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { get } from 'svelte/store';
 	import { onDestroy } from 'svelte'; // Import onDestroy for cleanup
-	import type { Transaction } from '$lib/types/transactionTypes';
 
 	// Import service functions from conversationService using correct names
 	import {
@@ -17,6 +16,7 @@
 		extractedTransactions,
 		isProcessing
 	} from '$lib/services/ai/conversation/conversationDerivedStores';
+		import type { Transaction } from '$lib/stores/types';
 
 	let userInput = '';
 	let submitTimeoutId: ReturnType<typeof setTimeout> | null = null; // For debounce

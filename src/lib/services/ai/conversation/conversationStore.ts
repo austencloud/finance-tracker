@@ -1,4 +1,4 @@
-import type { Transaction } from '$lib/types/transactionTypes';
+import type { Transaction } from '$lib/stores/types';
 import { writable, get, type Writable, type Readable } from 'svelte/store';
 import { v4 as uuidv4 } from 'uuid';
 

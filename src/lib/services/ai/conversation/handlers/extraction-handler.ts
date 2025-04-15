@@ -9,7 +9,7 @@ import { deepseekChat, getFallbackResponse } from '../../deepseek-client';
 import { getExtractionPrompt, getSystemPrompt } from '../../prompts';
 import { lastExtractionResult, extractedTransactions } from '../conversationDerivedStores';
 import { conversationStore } from '../conversationStore';
-import type { Transaction } from '$lib/types/transactionTypes';
+import type { Transaction } from '$lib/stores/types';
 
 // --- Helper Function for Normalizing Description ---
 function normalizeDescription(desc: string | undefined | null): string {

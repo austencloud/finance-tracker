@@ -1,7 +1,7 @@
 // src/lib/stores/adapters.ts
 import { writable, type Readable } from 'svelte/store';
 import { appStore } from './AppStore';
-import type { Transaction, Category } from '$lib/types/transactionTypes';
+import type { Category, Transaction } from './types';
 
 // Instead of fancy derived stores, we'll just provide direct proxy properties
 // Components subscribing to these will get notifications when the main store changes

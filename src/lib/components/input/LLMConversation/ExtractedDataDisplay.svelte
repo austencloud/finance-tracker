@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { extractedTransactions } from '$lib/services/ai/conversation/conversationDerivedStores';
-	import type { Transaction } from '$lib/types/transactionTypes';
+		import type { Transaction } from '$lib/stores/types';
 	import { onDestroy } from 'svelte'; // Make sure onDestroy is imported
 
 	function formatCurrency(amount: number | string): string {
@@ -14,7 +14,6 @@
 	// Subscribe to the store using Svelte's reactive syntax ($)
 	// Add explicit typing to ensure transactions is recognized as Transaction[]
 	$: transactions = $extractedTransactions as Transaction[];
-
 
 	// Keep the debug subscription if needed
 	const unsubscribe = extractedTransactions.subscribe((value) => {

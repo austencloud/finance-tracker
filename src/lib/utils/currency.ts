@@ -1,5 +1,6 @@
 // src/lib/utils/currency.ts
-import type { Transaction } from '$lib/types/transactionTypes';
+
+import type { Transaction } from "$lib/stores/types";
 
 /**
  * Formats a number as currency

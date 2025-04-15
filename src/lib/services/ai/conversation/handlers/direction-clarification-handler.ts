@@ -3,7 +3,7 @@ import { extractedTransactions } from '../conversationDerivedStores'; // Import 
 import { get } from 'svelte/store';
 import { categorizeTransaction } from '$lib/services/categorizer';
 import { conversationStore } from '../conversationStore';
-import type { Transaction } from '$lib/types/transactionTypes';
+import type { Transaction } from '$lib/stores/types';
 
 // --- Locally Defined Helper Function (Workaround for missing export) ---
 /**
@@ -118,9 +118,9 @@ export async function handleDirectionClarification(
 	const transactionsToUpdate = allTransactions.filter((t: Transaction) => {
 		if (t.id) {
 			return txnIdsForClarification.includes(t.id);
-        }
-        return false;
-    });
+		}
+		return false;
+	});
 
 	if (transactionsToUpdate.length > 0) {
 		// Apply the direction using the local helper function

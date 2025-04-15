@@ -145,7 +145,6 @@ Let's start by tackling that conversation handler mess - it's the smelliest part
 ```typescript
 // src/lib/services/ai/conversation/ConversationMachine.ts
 import { createMachine, interpret } from 'xstate';
-import type { Transaction } from '$lib/types/transactionTypes';
 
 // Define state machine types
 type ConversationContext = {

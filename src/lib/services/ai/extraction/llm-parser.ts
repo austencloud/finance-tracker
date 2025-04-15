@@ -1,5 +1,5 @@
 // src/lib/services/ai/extraction/llm-parser.ts
-import type { Transaction } from '$lib/types/transactionTypes';
+
 import { v4 as uuidv4 } from 'uuid';
 import { resolveAndFormatDate } from '$lib/utils/date';
 import { categorizeTransaction } from '../../categorizer';
@@ -10,6 +10,7 @@ import {
 	type LLMTransactionExtraction
 } from '$lib/schemas/LLMOutputSchema'; // Import Zod schemas
 import { TransactionSchema } from '$lib/schemas/TransactionSchema';
+import type { Transaction } from '$lib/stores/types';
 
 /**
  * Attempts to fix common JSON syntax errors often produced by LLMs.
