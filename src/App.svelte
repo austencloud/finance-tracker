@@ -44,7 +44,7 @@
 			Export JSON (All)
 		</button>
 		<button
-			on:click={() => generateHTMLReport($transactions, $categoryMy assistant wasTotals)}
+			on:click={() => generateHTMLReport($transactions, $categoryTotals)}
 			disabled={$transactions.length === 0}
 			class="action-button primary-action"
 		>
