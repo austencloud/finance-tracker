@@ -142,18 +142,3 @@ Let's start by tackling that conversation handler mess - it's the smelliest part
 
 ### State Machine Pattern for Conversation Service
 
-```typescript
-// src/lib/services/ai/conversation/ConversationMachine.ts
-import { createMachine, interpret } from 'xstate';
-
-// Define state machine types
-type ConversationContext = {
-  messages: Array<{role: string, content: string}>;
-  extractedTransactions: Transaction[];
-  pendingText: string;
-  error?: string;
-};
-
-type ConversationEvent =
-  | { type:
-```

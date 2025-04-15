@@ -1,130 +1,113 @@
 // src/lib/stores/adapters.ts
-import { writable, type Readable } from 'svelte/store';
-import { appStore } from './AppStore';
-import type { Category, Transaction } from './types';
+import { derived, get } from 'svelte/store';
+import { appStore } from './AppStore'; // Import the single central store
+import type { Category, Transaction, SortField } from './types';
 
-// Instead of fancy derived stores, we'll just provide direct proxy properties
-// Components subscribing to these will get notifications when the main store changes
-export const transactions = {
-	subscribe: (callback: any) => {
-		return appStore.subscribe((state) => callback(state.transactions));
-	}
-};
+// --- Read-only State Slices (using derived) ---
+// Components can subscribe to these with $ notation
 
-export const loading = {
-	subscribe: (callback: any) => {
-		return appStore.subscribe((state) => callback(state.ui.loading));
-	}
-};
+export const transactions = derived(appStore, ($s) => $s.transactions);
+export const loading = derived(appStore, ($s) => $s.ui.loading);
+export const showSuccessMessage = derived(appStore, ($s) => $s.ui.showSuccessMessage);
+export const categories = derived(appStore, ($s) => $s.categories); // Assuming categories are in AppState
 
-export const showSuccessMessage = {
-	subscribe: (callback: any) => {
-		return appStore.subscribe((state) => callback(state.ui.showSuccessMessage));
-	}
-};
+// Selected transaction *object* derived from the ID in state
+export const selectedTransaction = derived(appStore, ($s) =>
+	$s.ui.selectedTransactionId ? appStore.getTransactionById($s.ui.selectedTransactionId) : null
+);
+export const showTransactionDetails = derived(appStore, ($s) => $s.ui.showTransactionDetails);
+export const currentCategory = derived(appStore, ($s) => $s.ui.currentCategory);
 
-export const selectedTransaction = {
-	subscribe: (callback: any) => {
-		return appStore.subscribe((state) => callback(state.ui.selectedTransaction));
-	}
-};
+// Filters
+export const filterCategory = derived(appStore, ($s) => $s.filters.category);
+export const searchTerm = derived(appStore, ($s) => $s.filters.searchTerm);
+export const sortField = derived(appStore, ($s) => $s.filters.sortField);
+export const sortDirection = derived(appStore, ($s) => $s.filters.sortDirection);
 
-export const showTransactionDetails = {
-	subscribe: (callback: any) => {
-		return appStore.subscribe((state) => callback(state.ui.showTransactionDetails));
-	}
-};
+// Computed Values as derived stores
+export const sortedTransactions = derived(appStore, ($s) =>
+	appStore.getSortedFilteredTransactions()
+);
+export const categoryTotals = derived(appStore, ($s) => appStore.getCategoryTotals());
 
-export const currentCategory = {
-	subscribe: (callback: any) => {
-		return appStore.subscribe((state) => callback(state.ui.currentCategory));
-	}
-};
+// Bulk Processing UI state
+export const isBulkProcessing = derived(appStore, ($s) => $s.bulkProcessing.isBulkProcessing);
+export const processingChunks = derived(appStore, ($s) => $s.bulkProcessing.processingChunks);
+export const processingProgress = derived(appStore, ($s) => $s.bulkProcessing.processingProgress);
+export const tempExtractedTransactions = derived(
+	appStore,
+	($s) => $s.bulkProcessing.tempExtractedTransactions
+);
+export const processingStats = derived(appStore, ($s) => {
+	// Calculate stats based on bulkProcessing state
+	const chunks = $s.bulkProcessing.processingChunks;
+	const successChunks = chunks.filter((c) => c.status === 'success').length;
+	const errorChunks = chunks.filter((c) => c.status === 'error').length;
+	const pendingChunks = chunks.filter(
+		(c) => c.status === 'pending' || c.status === 'processing'
+	).length;
+	return {
+		totalChunks: chunks.length,
+		successChunks,
+		errorChunks,
+		pendingChunks,
+		transactionCount: $s.bulkProcessing.tempExtractedTransactions.length,
+		isComplete: chunks.length > 0 && pendingChunks === 0
+	};
+});
 
-export const filterCategory = {
-	subscribe: (callback: any) => {
-		return appStore.subscribe((state) => callback(state.filters.category));
-	}
-};
+// Conversation UI state
+export const conversationMessages = derived(appStore, ($s) => $s.conversation.messages);
+export const conversationStatus = derived(appStore, ($s) => $s.conversation.status);
+export const conversationProgress = derived(appStore, ($s) => $s.conversation.progress);
+export const isProcessing = // Renamed from conversationIsProcessing for consistency
+	derived(appStore, ($s) => $s.conversation.isProcessing);
+export const extractedTransactions = // Conversation specific extractions
+	derived(appStore, ($s) => $s.conversation.extractedTransactions);
 
-export const searchTerm = {
-	subscribe: (callback: any) => {
-		return appStore.subscribe((state) => callback(state.filters.searchTerm));
-	}
-};
+// --- Actions ---
+// Just forward the action calls to the central store's methods
 
-export const sortField = {
-	subscribe: (callback: any) => {
-		return appStore.subscribe((state) => callback(state.filters.sortField));
-	}
-};
-
-export const sortDirection = {
-	subscribe: (callback: any) => {
-		return appStore.subscribe((state) => callback(state.filters.sortDirection));
-	}
-};
-
-export const sortedTransactions = {
-	subscribe: (callback: any) => {
-		return appStore.subscribe((state) => {
-			// Just recalculate the sorted transactions right here
-			const { transactions, filters } = state;
-
-			// Do the filtering
-			let filtered =
-				filters.category === 'all'
-					? transactions
-					: transactions.filter((t) => t.category === filters.category);
-
-			if (filters.searchTerm) {
-				const term = filters.searchTerm.toLowerCase();
-				filtered = filtered.filter(
-					(t) => t.description.toLowerCase().includes(term) || t.date.toLowerCase().includes(term)
-				);
-			}
-
-			// Do the sorting
-			const sorted = [...filtered].sort((a, b) => {
-				let valueA: any, valueB: any;
-
-				if (filters.sortField === 'amount') {
-					valueA = parseFloat(a.amount.toString().replace(/[$,]/g, ''));
-					valueB = parseFloat(b.amount.toString().replace(/[$,]/g, ''));
-				} else if (filters.sortField === 'date') {
-					// Date logic...
-					// (copy from the other implementation)
-				} else {
-					valueA = a[filters.sortField];
-					valueB = b[filters.sortField];
-				}
-
-				if (valueA < valueB) return filters.sortDirection === 'asc' ? -1 : 1;
-				if (valueA > valueB) return filters.sortDirection === 'asc' ? 1 : -1;
-				return 0;
-			});
-
-			callback(sorted);
-		});
-	}
-};
-
-// Just forward all the action methods to appStore
 export const addTransactions = (newTransactions: Transaction[]) =>
 	appStore.addTransactions(newTransactions);
-
 export const clearTransactions = () => appStore.clearTransactions();
-
 export const deleteTransaction = (id: string) => appStore.deleteTransaction(id);
-
 export const updateTransaction = (updatedTransaction: Transaction) =>
 	appStore.updateTransaction(updatedTransaction);
 
-export const assignCategory = (transaction: Transaction, category: Category) =>
-	appStore.assignCategory(transaction, category);
+// Updated to pass ID instead of the whole object
+export const assignCategory = (transaction: Transaction, category: Category) => {
+	if (transaction?.id) {
+		appStore.assignCategory(transaction.id, category);
+	} else {
+		console.error('Cannot assign category: Transaction or ID missing');
+	}
+};
+export const addNotes = (transaction: Transaction, notes: string) => {
+	if (transaction?.id) {
+		appStore.addNotes(transaction.id, notes);
+	} else {
+		console.error('Cannot add notes: Transaction or ID missing');
+	}
+};
 
-export const addNotes = (transaction: Transaction, notes: string) =>
-	appStore.addNotes(transaction, notes);
+// UI Actions mediated through adapters
+export const setLoading = (loading: boolean) => appStore.setLoading(loading);
+export const setCurrentCategory = (category: Category) => appStore.setModalCategory(category);
 
-export const toggleSort = (field: 'date' | 'amount' | 'description' | 'category') =>
-	appStore.toggleSort(field);
+// Filter Actions
+export const setFilterCategory = (category: 'all' | Category) =>
+	appStore.setFilterCategory(category);
+export const setSearchTerm = (term: string) => appStore.setSearchTerm(term);
+export const toggleSort = (field: SortField) => appStore.toggleSort(field);
+
+// Bulk Processing Actions mediated through adapters
+export const finalizeBulkProcessing = (success: boolean) =>
+	appStore.finalizeBulkProcessing(success);
+// initializeChunks etc. are likely called from services, which should import AppStore directly
+
+// Conversation Actions mediated through adapters
+export const addConversationMessage = (role: 'user' | 'assistant', content: string) =>
+	appStore.addConversationMessage(role, content);
+// Other conversation actions (sendMessage, generateSummary) should likely be called
+// from components/services importing conversationService, which itself uses AppStore now.
