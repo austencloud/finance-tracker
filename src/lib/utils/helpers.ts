@@ -1,5 +1,5 @@
 import { categorizeTransaction } from '$lib/services/categorizer';
-import type { Transaction, Category } from '$lib/types'; // Import necessary types
+import type { Transaction } from '$lib/types/transactionTypes';
 
 /**
  * Generate a unique ID for a transaction

@@ -23,7 +23,6 @@ import { handleCorrection } from './conversation/handlers/correction-handler';
 import { handleExtraction } from './conversation/handlers/extraction-handler';
 import { handleNormalResponse } from './conversation/handlers/normal-response-handler';
 import { handleFillDetails } from './conversation/handlers/fill-details-handler';
-import { startBackgroundProcessing } from './conversation/bulk/processing';
 import { handleInitialData } from './conversation/handlers/initial-data-handler';
 import { handleMood } from './conversation/handlers/mood-handler';
 import { handleDirectionClarification } from './conversation/handlers/direction-clarification-handler';
@@ -33,6 +32,7 @@ import { handleBulkDirectionCorrection } from './conversation/handlers/bulk-dire
 // --- NEW: Import orchestrator for re-extraction ---
 import { extractTransactionsFromText } from './extraction/orchestrator';
 import type { Category, Transaction } from '$lib/types/transactionTypes';
+import { enhancedBackgroundProcessing } from './conversation/bulk/processing';
 function getConversationState(): ConversationState {
 	return get(conversationStore as any) as ConversationState;
 }
@@ -411,7 +411,7 @@ export async function sendUserMessage(message: string): Promise<void> {
 
 		// 4. Bulk Data
 		if (!handled && isBulkData(message)) {
-			const bulkResult = await startBackgroundProcessing(message);
+			const bulkResult = await enhancedBackgroundProcessing(message);
 			if (bulkResult.handled) {
 				safeAddAssistantMessageLocal(bulkResult.response);
 				delegatedToBackground = true;

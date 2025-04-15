@@ -1,6 +1,9 @@
 // src/lib/stores/index.ts
-export * from './transactionStore';
-export * from './filterStore';
-export * from './uiStore';
+// Export our new centralized store
+export { appStore } from './AppStore';
 
-// Re-export everything for convenience
+// Export all the legacy adapters for backward compatibility
+export * from './adapters';
+
+// Eventually when migration is complete, we'll remove the adapters
+// and only export the appStore

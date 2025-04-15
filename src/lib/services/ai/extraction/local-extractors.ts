@@ -1,9 +1,9 @@
 // src/lib/services/ai/extraction/local-extractors.ts
-import type { Transaction, Category } from '$lib/types'; // Assuming Transaction type is defined here or imported
 // import { generateTransactionId } from '$lib/utils/helpers'; // Using UUID now
 import { v4 as uuidv4 } from 'uuid'; // Import UUID
 import { resolveAndFormatDate } from '$lib/utils/date'; // Helper for parsing and formatting dates
 import { categorizeTransaction } from '../../categorizer'; // Helper for assigning categories (Adjust path as needed)
+import type { Transaction } from '$lib/types/transactionTypes';
 
 /**
  * Quickly checks if a given text string contains common patterns

@@ -5,7 +5,7 @@
 	import { onMount } from 'svelte';
 
 	// Import stores and actions for global actions (assuming these remain outside the AI scope)
-	import { transactions, categoryTotals, clearTransactions } from '$lib/stores'; // These manage the FINAL list
+	import { transactions, clearTransactions } from '$lib/stores'; // These manage the FINAL list
 	import { exportAsJson, generateHTMLReport } from '$lib/services/exporter';
 
 	// --- CORRECTED IMPORT ---
@@ -14,6 +14,7 @@
 	// Import the initialize function from the service
 	import { initialize } from '$lib/services/ai/conversation/conversationService'; // <-- Import initialize from service
 	import { isProcessing } from '$lib/services/ai/conversation/conversationDerivedStores';
+	import { categoryTotals } from '$lib/stores/transactionStore';
 
 	// Initialize the conversation logic when this page component mounts
 	onMount(() => {
@@ -43,7 +44,7 @@
 			Export JSON (All)
 		</button>
 		<button
-			on:click={() => generateHTMLReport($transactions, $categoryTotals)}
+			on:click={() => generateHTMLReport($transactions, $categoryMy assistant wasTotals)}
 			disabled={$transactions.length === 0}
 			class="action-button primary-action"
 		>

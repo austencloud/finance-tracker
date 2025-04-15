@@ -1,9 +1,9 @@
 // src/lib/services/ai/category.ts
-import type { Transaction, Category } from '$lib/types';
 import { categories } from '$lib/stores/transactionStore';
 import { getCategorySuggestionPrompt } from './prompts';
 // In src/lib/services/ai/category.ts
 import { deepseekChat } from './deepseek-client';
+import type { Category, Transaction } from '$lib/types/transactionTypes';
 
 export async function suggestCategory(transaction: Transaction): Promise<Category> {
   try {

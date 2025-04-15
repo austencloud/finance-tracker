@@ -254,7 +254,22 @@ function createInternalConversationStore() {
 			console.error('[ConvStore] Tried to replace with non-array transactions:', newTransactions);
 			return;
 		}
+		// --- NEW METHODS ---
+		function _setDuplicateConfirmationNeeded(needed: boolean, transactions: Transaction[] = []) {
+			update((state) => ({
+				...state,
+				_internal: {
+					...state._internal,
+					waitingForDuplicateConfirmation: needed,
+					// Store copies to avoid mutation issues if needed
+					pendingDuplicateTransactions: needed ? [...transactions] : []
+				}
+			}));
+		}
 
+		function _clearDuplicateConfirmation() {
+			_setDuplicateConfirmationNeeded(false);
+		}
 		update((state) => {
 			console.log(`[ConvStore] Replacing extracted txns with ${newTransactions.length}.`);
 			return {
