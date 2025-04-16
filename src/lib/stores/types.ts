@@ -31,7 +31,38 @@ export interface Transaction {
 	notes: string;
 	direction: 'in' | 'out' | 'unknown';
 }
+export interface ConversationState {
+	messages: ConversationMessage[];
+	status: string;
+	isProcessing: boolean;
+	progress: number;
+	userMood: UserMood;
+	_internal: {
+		initialPromptSent: boolean;
+		// Direction Clarification (Existing)
+		waitingForDirectionClarification: boolean;
+		clarificationTxnIds: string[];
+		// Correction Context (Existing)
+		lastUserMessageText: string;
+		lastExtractionBatchId: string | null;
+		// Duplicate Confirmation (Existing)
+		waitingForDuplicateConfirmation?: boolean;
+		pendingDuplicateTransactions?: Transaction[];
 
+		// --- NEW: Correction Clarification State ---
+		/** Flag indicating the app is waiting for the user to specify which transaction to correct. */
+		waitingForCorrectionClarification?: boolean;
+		/** Details of the correction that needs clarification */
+		pendingCorrectionDetails?: {
+			originalMessage: string; // The user's original correction message (e.g., "change amount to $12")
+			parsedField: 'amount' | 'date' | 'description' | 'category' | 'type' | 'notes'; // The field parsed from originalMessage
+			parsedValue: any; // The value parsed from originalMessage
+			potentialTxnIds: string[]; // IDs of transactions that could be the target
+            potentialTxnDescriptions: string[]; // Descriptions to help user choose
+		} | null;
+		// --- END NEW ---
+	};
+}
 export interface CategoryTotals {
 	[key: string]: number;
 }
@@ -70,15 +101,28 @@ export interface ConversationState {
 	userMood: UserMood;
 	_internal: {
 		initialPromptSent: boolean;
+		// Direction Clarification (Existing)
 		waitingForDirectionClarification: boolean;
 		clarificationTxnIds: string[];
+		// Correction Context (Existing)
 		lastUserMessageText: string;
 		lastExtractionBatchId: string | null;
+		// Duplicate Confirmation (Existing)
+		waitingForDuplicateConfirmation?: boolean;
+		pendingDuplicateTransactions?: Transaction[];
 
-		// --- Add these lines ---
-		waitingForDuplicateConfirmation?: boolean; // Flag if waiting for user
-		pendingDuplicateTransactions?: Transaction[]; // Store duplicates temporarily
-		// --- End added lines ---
+		// --- NEW: Correction Clarification State ---
+		/** Flag indicating the app is waiting for the user to specify which transaction to correct. */
+		waitingForCorrectionClarification?: boolean;
+		/** Details of the correction that needs clarification */
+		pendingCorrectionDetails?: {
+			originalMessage: string; // The user's original correction message (e.g., "change amount to $12")
+			parsedField: 'amount' | 'date' | 'description' | 'category' | 'type' | 'notes'; // The field parsed from originalMessage
+			parsedValue: any; // The value parsed from originalMessage
+			potentialTxnIds: string[]; // IDs of transactions that could be the target
+            potentialTxnDescriptions: string[]; // Descriptions to help user choose
+		} | null;
+		// --- END NEW ---
 	};
 }
 

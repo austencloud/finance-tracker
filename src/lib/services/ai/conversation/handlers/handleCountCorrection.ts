@@ -1,25 +1,14 @@
-// src/lib/services/ai/conversation/handlers/handleCountCorrection.ts
 import { get } from 'svelte/store';
-import { appStore } from '$lib/stores/AppStore'; // *** Import central appStore ***
+import { appStore } from '$lib/stores/AppStore';
 
-// --- Keep necessary imports ---
 import { deepseekChat, getFallbackResponse } from '../../deepseek-client';
-import { getSystemPrompt } from '../../prompts'; // Keep getSystemPrompt
-// Import the updated parser function signature
-import { parseTransactionsFromLLMResponse } from '../../extraction/llm-parser';
-import { applyExplicitDirection } from '$lib/utils/helpers'; // Keep helpers
-import type { Transaction } from '$lib/stores/types';
-import { v4 as uuidv4 } from 'uuid'; // Import uuid for potentially adding IDs
+import { getSystemPrompt } from '../../prompts';
 
-/**
- * Handles user messages indicating the AI extracted the wrong number of transactions
- * from the *immediately preceding* user input text stored in conversation context.
- * Example: "No, there were 5 transactions", "You missed one", "That should be 3 items".
- *
- * @param message The user's input message (the correction hint).
- * @param explicitDirectionIntent Optional direction hint from the service.
- * @returns An object indicating if the message was handled and an optional response.
- */
+import { parseTransactionsFromLLMResponse } from '../../extraction/llm-parser';
+import { applyExplicitDirection } from '$lib/utils/helpers';
+import type { Transaction } from '$lib/stores/types';
+import { v4 as uuidv4 } from 'uuid';
+
 export async function handleCountCorrection(
 	message: string,
 	explicitDirectionIntent: 'in' | 'out' | null
@@ -40,7 +29,7 @@ export async function handleCountCorrection(
 
 	const conversationInternalState = get(appStore).conversation._internal;
 	const originalText = conversationInternalState.lastUserMessageText;
-	const lastBatchId = conversationInternalState.lastExtractionBatchId; // ID of the extraction being corrected
+	const lastBatchId = conversationInternalState.lastExtractionBatchId;
 
 	const hasContextForCorrection = !!originalText && !!lastBatchId;
 
@@ -50,7 +39,7 @@ export async function handleCountCorrection(
 
 	const currentMainTransactions = get(appStore).transactions;
 	const previousBatchTransactions = currentMainTransactions.filter(
-		(t) => t.batchId === lastBatchId // Assumes Transaction type has optional batchId
+		(t) => t.batchId === lastBatchId
 	);
 	const previousTransactionCount = previousBatchTransactions.length;
 
@@ -59,7 +48,6 @@ export async function handleCountCorrection(
 	);
 	appStore.setConversationStatus('Re-evaluating extraction...', 30);
 
-	// --- Attempt to re-extract with the correction hint ---
 	try {
 		const correctionHint = message;
 
@@ -85,11 +73,9 @@ export async function handleCountCorrection(
 
 		const aiResponse = await deepseekChat(messages, { temperature: 0.2 });
 
-		// --- Generate a NEW batchId for this correction attempt ---
 		const newCorrectionBatchId = uuidv4();
 
-		// --- Pass the new batchId to the parser ---
-		const parsedTransactions = parseTransactionsFromLLMResponse(aiResponse, newCorrectionBatchId); // <-- Added newCorrectionBatchId
+		const parsedTransactions = parseTransactionsFromLLMResponse(aiResponse, newCorrectionBatchId);
 
 		if (!Array.isArray(parsedTransactions)) {
 			console.warn(
@@ -107,24 +93,19 @@ export async function handleCountCorrection(
 			throw new Error('AI did not find any transactions after correction.');
 		}
 
-		// Apply direction and ensure transactions have unique IDs and the NEW batch ID
 		let finalTransactions = applyExplicitDirection(parsedTransactions, explicitDirectionIntent).map(
 			(txn) => ({
 				...txn,
-				// id should already be assigned by parser's call to convertLLMDataToTransactions
-				// batchId should also already be assigned by parser
-				// If parser doesn't assign ID, add it here: id: uuidv4()
-				// Ensure batchId is correctly set by parser (it should be if parser is updated)
-				batchId: newCorrectionBatchId // Explicitly ensure it has the *new* ID
+
+				batchId: newCorrectionBatchId
 			})
 		);
 
-		// Add the *new* batch of transactions to the central store
 		appStore.addTransactions(finalTransactions);
 
 		const response = `Okay, I've re-analyzed the text based on your correction. I've added ${finalTransactions.length} transaction(s) based on that. Please check the list.`;
 		appStore.setConversationStatus('Extraction updated', 100);
-		// Clear context for the specific correction chain
+
 		appStore._setConversationInternalState({
 			lastUserMessageText: '',
 			lastExtractionBatchId: null
@@ -138,6 +119,6 @@ export async function handleCountCorrection(
 			lastUserMessageText: '',
 			lastExtractionBatchId: null
 		});
-		return { handled: true, response: errorMsg }; // Handled the attempt, but failed
+		return { handled: true, response: errorMsg };
 	}
 }

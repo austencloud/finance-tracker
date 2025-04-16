@@ -1,14 +1,12 @@
-// src/lib/stores/AppStore.ts
 import { writable, get, derived, type Writable } from 'svelte/store';
 import { v4 as uuidv4 } from 'uuid';
 
-// --- Import Analytics Service ---
 import {
 	calculateFinancialSummary,
 	detectAnomalies,
 	predictFutureTransactions
-} from '$lib/services/analytics'; // Adjust path if needed
-import { isLLMAvailable } from '$lib/services/ai/deepseek-client'; // Check LLM status
+} from '$lib/services/analytics';
+import { isLLMAvailable } from '$lib/services/ai/deepseek-client';
 
 import type {
 	AppState,
@@ -24,11 +22,8 @@ import type {
 	ProcessingChunk,
 	ChunkStatus,
 	UserMood,
-	// --- Import Analysis Types ---
 	AnalysisState
 } from './types';
-
-// --- Initial State Definitions ---
 
 const initialCategories: Category[] = [
 	'PayPal Transfers',
@@ -57,12 +52,17 @@ const initialConversationState: ConversationState = {
 	userMood: 'unknown',
 	_internal: {
 		initialPromptSent: false,
+		// Existing states
 		waitingForDirectionClarification: false,
 		clarificationTxnIds: [],
 		lastUserMessageText: '',
 		lastExtractionBatchId: null,
 		waitingForDuplicateConfirmation: false,
-		pendingDuplicateTransactions: []
+		pendingDuplicateTransactions: [],
+		// --- Initialize NEW states ---
+		waitingForCorrectionClarification: false,
+		pendingCorrectionDetails: null
+		// --- END Initialize ---
 	}
 };
 
@@ -101,10 +101,8 @@ const initialState: AppState = {
 	analysis: initialAnalysisState
 };
 
-// --- Central Store ---
 const appStateStore: Writable<AppState> = writable(initialState);
 
-// --- Helpers ---
 function showTemporarySuccessMessage(duration = 3000) {
 	appStateStore.update((state) => ({
 		...state,
@@ -135,15 +133,52 @@ function triggerAnalysisRun() {
 	}, ANALYSIS_DEBOUNCE_MS);
 }
 
-// --- Exported Store Object ---
 export const appStore = {
 	subscribe: appStateStore.subscribe,
 
-	// === SELECTORS / COMPUTED VALUES ===
 	getTransactionById: (id: string | null): Transaction | null => {
 		if (!id) return null;
 		const state = get(appStateStore);
 		return state.transactions.find((t) => t.id === id) || null;
+	},
+	setCorrectionClarificationNeeded: (
+		pendingDetails: Exclude<AppState['conversation']['_internal']['pendingCorrectionDetails'], null>
+	) => {
+		console.log('[AppStore] Setting state: waitingForCorrectionClarification');
+		appStateStore.update((state) => ({
+			...state,
+			conversation: {
+				...state.conversation,
+				_internal: {
+					...state.conversation._internal,
+					waitingForCorrectionClarification: true,
+					pendingCorrectionDetails: pendingDetails,
+					// Also clear the general correction context when asking for clarification
+					lastUserMessageText: '',
+					lastExtractionBatchId: null
+				}
+			}
+		}));
+	},
+	clearCorrectionClarificationState: () => {
+		console.log('[AppStore] Clearing state: waitingForCorrectionClarification');
+		appStateStore.update((state) => {
+			// Check if we are actually waiting to avoid unnecessary updates
+			if (!state.conversation._internal.waitingForCorrectionClarification) {
+				return state;
+			}
+			return {
+				...state,
+				conversation: {
+					...state.conversation,
+					_internal: {
+						...state.conversation._internal,
+						waitingForCorrectionClarification: false,
+						pendingCorrectionDetails: null
+					}
+				}
+			};
+		});
 	},
 	getSortedFilteredTransactions: (): Transaction[] => {
 		const state = get(appStateStore);
@@ -217,72 +252,66 @@ export const appStore = {
 		return totals;
 	},
 
-	// === ACTIONS ===
-
-	// --- Transaction Actions (Now Trigger Analysis) ---
 	addTransactions: (newTransactions: Transaction[]) => {
 		if (!Array.isArray(newTransactions) || newTransactions.length === 0) {
-			console.log('[AppStore.addTransactions] Received empty or invalid input. Skipping.'); // DEBUG
+			console.log('[AppStore.addTransactions] Received empty or invalid input. Skipping.');
 			return;
 		}
 		let itemsAdded = false;
-		let addedCount = 0; // Keep track of how many were actually added
+		let addedCount = 0;
 
 		appStateStore.update((state) => {
 			const currentIds = new Set(state.transactions.map((t) => t.id));
 			const uniqueNewTransactions = newTransactions.filter((newTxn) => {
 				if (!newTxn || typeof newTxn !== 'object') {
-					console.warn('[AppStore.addTransactions] Skipping invalid transaction object:', newTxn); // DEBUG
+					console.warn('[AppStore.addTransactions] Skipping invalid transaction object:', newTxn);
 					return false;
 				}
-				// Ensure ID exists, generate if missing (consider if this is desired behavior)
 				if (!newTxn.id) {
 					newTxn.id = uuidv4();
 					console.warn(
 						`[AppStore.addTransactions] Transaction missing ID, generated new one: ${newTxn.id}`,
 						newTxn
-					); // DEBUG
+					);
 				}
 				if (currentIds.has(newTxn.id)) {
-					console.log(`[AppStore.addTransactions] Skipping duplicate transaction ID: ${newTxn.id}`); // DEBUG
+					console.log(`[AppStore.addTransactions] Skipping duplicate transaction ID: ${newTxn.id}`);
 					return false;
 				}
 				return true;
 			});
 
 			if (uniqueNewTransactions.length > 0) {
-				// *** ADDED DEBUG LOG HERE ***
 				console.log(
 					'[AppStore.addTransactions] Attempting to add transactions to appStore:',
 					JSON.stringify(uniqueNewTransactions)
 				);
-				// *************************
 				itemsAdded = true;
-				addedCount = uniqueNewTransactions.length; // Store the count
+				addedCount = uniqueNewTransactions.length;
 				return {
 					...state,
 					transactions: [...state.transactions, ...uniqueNewTransactions]
 				};
 			} else {
-				console.log('[AppStore.addTransactions] No unique transactions to add.'); // DEBUG
+				console.log('[AppStore.addTransactions] No unique transactions to add.');
 			}
-			return state; // Return unchanged state if no unique items added
+			return state;
 		});
 
 		if (itemsAdded) {
 			console.log(
 				`[AppStore.addTransactions] Successfully added ${addedCount} unique transaction(s).`
-			); // DEBUG
+			);
 			showTemporarySuccessMessage();
-			triggerAnalysisRun(); // Trigger analysis
+			triggerAnalysisRun();
 		} else {
-			console.log('[AppStore.addTransactions] No items were added (duplicates or invalid).'); // DEBUG
+			console.log('[AppStore.addTransactions] No items were added (duplicates or invalid).');
 		}
 	},
 	clearTransactions: () => {
 		if (confirm('Are you sure you want to clear all transactions? This cannot be undone.')) {
 			appStateStore.update((state) => ({ ...state, transactions: [] }));
-			triggerAnalysisRun(); // Trigger analysis
+			triggerAnalysisRun();
 		}
 	},
 	deleteTransaction: (id: string) => {
@@ -304,7 +333,7 @@ export const appStore = {
 			};
 		});
 		if (itemDeleted) {
-			triggerAnalysisRun(); // Trigger analysis
+			triggerAnalysisRun();
 		}
 	},
 	updateTransaction: (updatedTransaction: Transaction) => {
@@ -320,7 +349,7 @@ export const appStore = {
 			return state;
 		});
 		if (itemUpdated) {
-			triggerAnalysisRun(); // Trigger analysis
+			triggerAnalysisRun();
 		}
 	},
 	assignCategory: (transactionId: string, category: Category) => {
@@ -336,7 +365,7 @@ export const appStore = {
 			return state;
 		});
 		if (itemUpdated) {
-			triggerAnalysisRun(); // Trigger analysis
+			triggerAnalysisRun();
 		}
 	},
 	addNotes: (transactionId: string, notes: string) => {
@@ -351,12 +380,8 @@ export const appStore = {
 			}
 			return state;
 		});
-		if (itemUpdated) {
-			// Optional: triggerAnalysisRun(); // Notes might not affect core analysis
-		}
 	},
 
-	// --- UI Actions ---
 	setLoading: (loading: boolean) => {
 		appStateStore.update((state) => ({ ...state, ui: { ...state.ui, loading } }));
 	},
@@ -386,7 +411,6 @@ export const appStore = {
 		appStateStore.update((state) => ({ ...state, ui: { ...state.ui, currentCategory: category } }));
 	},
 
-	// --- Filter Actions ---
 	setFilterCategory: (category: 'all' | Category) => {
 		appStateStore.update((state) => ({ ...state, filters: { ...state.filters, category } }));
 	},
@@ -406,7 +430,6 @@ export const appStore = {
 		});
 	},
 
-	// --- Conversation Actions ---
 	addConversationMessage: (role: 'user' | 'assistant', content: string) => {
 		appStateStore.update((state) => ({
 			...state,
@@ -469,9 +492,6 @@ export const appStore = {
 		}));
 	},
 
-	// --- NEW Internal Conversation State Updater ---
-	// Use this internally from services/handlers to update context
-	// Prefix with _ convention suggests internal use, though not enforced by TS/JS
 	_setConversationInternalState: (updates: Partial<AppState['conversation']['_internal']>) => {
 		appStateStore.update((state) => ({
 			...state,
@@ -485,7 +505,23 @@ export const appStore = {
 		}));
 	},
 
-	// --- Bulk Processing Actions ---
+	clearCorrectionContext: () => {
+		console.log(
+			'[AppStore] Clearing correction context (lastUserMessageText, lastExtractionBatchId)'
+		);
+		appStateStore.update((state) => ({
+			...state,
+			conversation: {
+				...state.conversation,
+				_internal: {
+					...state.conversation._internal,
+					lastUserMessageText: '',
+					lastExtractionBatchId: null
+				}
+			}
+		}));
+	},
+
 	initializeBulkChunks: (chunks: string[]) => {
 		const initialChunks: ProcessingChunk[] = chunks.map((chunk, index) => ({
 			id: `chunk-${index}`,
@@ -507,7 +543,7 @@ export const appStore = {
 		chunkIndex: number,
 		status: ChunkStatus,
 		message: string = '',
-		transactions: Transaction[] = [] // Still accept txns to update count
+		transactions: Transaction[] = []
 	) => {
 		appStateStore.update((state) => {
 			const chunks = [...state.bulkProcessing.processingChunks];
@@ -516,7 +552,7 @@ export const appStore = {
 					...chunks[chunkIndex],
 					status,
 					message,
-					transactionCount: transactions.length // Update count for UI
+					transactionCount: transactions.length
 				};
 				const completed = chunks.filter(
 					(c) => c.status === 'success' || c.status === 'error'
@@ -536,15 +572,13 @@ export const appStore = {
 	},
 	finalizeBulkProcessing: (success: boolean) => {
 		appStateStore.update((state) => {
-			// Transactions were already added incrementally via addTransactions
 			return {
 				...state,
-				bulkProcessing: { ...initialBulkProcessingState } // Reset to initial
+				bulkProcessing: { ...initialBulkProcessingState }
 			};
 		});
 	},
 
-	// --- NEW Analysis Actions ---
 	setAnalysisLoading: (loading: boolean) => {
 		appStateStore.update((state) => ({
 			...state,

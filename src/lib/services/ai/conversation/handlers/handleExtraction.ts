@@ -6,14 +6,10 @@ import { v4 as uuidv4 } from 'uuid'; // Import uuid
 import { appStore } from '$lib/stores/AppStore';
 import type { Transaction } from '$lib/stores/types';
 
-// --- REMOVE old store imports ---
-// import { lastExtractionResult, extractedTransactions } from '../conversationDerivedStores';
-// import { conversationStore } from '../conversationStore';
-
 // --- Keep other necessary imports ---
 import {
 	applyExplicitDirection,
-	parseJsonFromAiResponse,
+	// parseJsonFromAiResponse, // Not directly used here, parser does it
 	textLooksLikeTransaction
 } from '$lib/utils/helpers';
 import { deepseekChat, getFallbackResponse } from '../../deepseek-client';
@@ -26,18 +22,10 @@ function normalizeDescription(desc: string | undefined | null): string {
 	return desc.toLowerCase().replace(/\s+/g, ' ').trim();
 }
 function createTransactionKey(txn: Transaction): string {
-	// Use optional chaining and default values for safety
 	const amountStr = typeof txn.amount === 'number' ? txn.amount.toFixed(2) : '0.00';
 	return `${txn.date || 'unknown'}-${amountStr}-${normalizeDescription(txn.description)}-${txn.direction || 'unknown'}`;
 }
 
-/**
- * Handles messages containing new transaction data using appStore.
- */
-
-/**
- * Handles messages containing new transaction data using appStore.
- */
 export async function handleExtraction(
 	message: string,
 	explicitDirectionIntent: 'in' | 'out' | null
@@ -55,6 +43,7 @@ export async function handleExtraction(
 			'assistant',
 			"It looks like I've already processed that exact text."
 		);
+		// Don't clear context here, user might still want to correct the previous identical one
 		return { handled: true, response: '' };
 	}
 
@@ -73,21 +62,22 @@ export async function handleExtraction(
 			{ role: 'user', content: extractionPrompt }
 		];
 
-		// Using deepseekChat here based on previous service code structure
 		const aiResponse = await deepseekChat(messages, { temperature: 0.2 });
 
 		// --- Pass the generated batchId to the parser ---
-		const parsedTransactions = parseTransactionsFromLLMResponse(aiResponse, batchId); // <-- Pass batchId
+		const parsedTransactions = parseTransactionsFromLLMResponse(aiResponse, batchId);
 
 		if (!Array.isArray(parsedTransactions)) {
 			console.warn('[ExtractionHandler] Failed to parse valid transaction array from AI response.');
 			const fallback = getFallbackResponse(new Error('AI response parsing failed'));
 			appStore.setConversationStatus('Error parsing response');
+			// --- Clear context on parse failure ---
+			appStore.clearCorrectionContext();
+			// --- END Context Clear ---
 			return { handled: true, response: fallback };
 		}
 
-		// The rest of the logic uses the result from the parser, which now includes the batchId
-
+		// Handle empty extraction result
 		if (parsedTransactions.length === 0) {
 			console.log(
 				'[ExtractionHandler] Parser returned empty array, no new transactions found or validated.'
@@ -95,11 +85,12 @@ export async function handleExtraction(
 			appStore.setConversationStatus('No new transactions found', 100);
 			const responseMsg =
 				"I looked through that text but couldn't find any clear transactions to add.";
-			// Set context even on failure to prevent immediate re-processing of same message
+			// --- Set context even on zero found ---
 			appStore._setConversationInternalState({
 				lastUserMessageText: message,
 				lastExtractionBatchId: batchId
 			});
+			// --- END Context Set ---
 			return { handled: true, response: responseMsg };
 		}
 
@@ -115,51 +106,56 @@ export async function handleExtraction(
 			(newTxn) => !existingKeys.has(createTransactionKey(newTxn))
 		);
 
-		if (trulyNewTransactions.length === 0) {
-			const duplicateCount = finalTransactionsPotentiallyWithDuplicates.length;
-			console.warn(
-				`[ExtractionHandler] All ${duplicateCount} extracted transaction(s) are duplicates.`
-			);
-			appStore.setConversationStatus('Duplicates detected', 100);
-			appStore._setConversationInternalState({
-				lastUserMessageText: message,
-				lastExtractionBatchId: batchId
-			});
-			return {
-				handled: true,
-				response: "It looks like I've already recorded all of those transactions."
-			};
-		} else {
-			const duplicateCount =
-				finalTransactionsPotentiallyWithDuplicates.length - trulyNewTransactions.length;
+		// Decide how to handle duplicates and set context
+		const duplicateCount =
+			finalTransactionsPotentiallyWithDuplicates.length - trulyNewTransactions.length;
+		let response = '';
+
+		if (trulyNewTransactions.length > 0) {
+			// Add the new ones
 			console.log(
 				`[ExtractionHandler] Adding ${trulyNewTransactions.length} new transaction(s). Found ${duplicateCount} duplicate(s).`
 			);
-
-			appStore._setConversationInternalState({
-				lastUserMessageText: message,
-				lastExtractionBatchId: batchId
-			});
 			appStore.addTransactions(trulyNewTransactions); // This adds to main list & triggers analysis
 
-			let response = `Added ${trulyNewTransactions.length} new transaction(s).`;
+			// --- Set context for the added batch ---
+			appStore._setConversationInternalState({
+				lastUserMessageText: message, // The user message processed
+				lastExtractionBatchId: batchId // The ID of the batch *added*
+			});
+			// --- END Context Set ---
+
+			response = `Added ${trulyNewTransactions.length} new transaction(s).`;
 			if (duplicateCount > 0) {
 				response += ` (Ignored ${duplicateCount} duplicate${duplicateCount > 1 ? 's' : ''}).`;
 			}
 			response += ` You can see them in the list now.`;
-
 			appStore.setConversationStatus('Extraction complete', 100);
 			return { handled: true, response: response, extractedCount: trulyNewTransactions.length };
+		} else {
+			// All were duplicates
+			console.warn(
+				`[ExtractionHandler] All ${finalTransactionsPotentiallyWithDuplicates.length} extracted transaction(s) are duplicates.`
+			);
+			appStore.setConversationStatus('Duplicates detected', 100);
+			// --- Clear context if ALL were duplicates? Or keep context of the *attempt*? ---
+			// Let's keep the context of the attempt, user might say "No, add them anyway" (though that needs another handler)
+			// Or maybe it's better to clear it to avoid confusion? Let's clear it for now.
+			appStore.clearCorrectionContext();
+			// --- END Context Clear ---
+
+			response = "It looks like I've already recorded all of those transactions.";
+			// TODO: Future enhancement - Ask if user wants to add duplicates anyway?
+			// If so, would need to set internal state `waitingForDuplicateConfirmation` and `pendingDuplicateTransactions`
+			return { handled: true, response: response };
 		}
 	} catch (error) {
 		console.error('[ExtractionHandler] Error during extraction:', error);
 		const errorMsg = getFallbackResponse(error instanceof Error ? error : undefined);
 		appStore.setConversationStatus('Error during extraction');
-		// Also set context here so identical erroring messages aren't immediately retried
-		appStore._setConversationInternalState({
-			lastUserMessageText: message,
-			lastExtractionBatchId: batchId
-		});
+		// --- Clear context on error ---
+		appStore.clearCorrectionContext();
+		// --- END Context Clear ---
 		return { handled: true, response: errorMsg };
 	}
 }
