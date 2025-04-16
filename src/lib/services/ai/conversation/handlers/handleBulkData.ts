@@ -14,7 +14,7 @@ import { getSystemPrompt, getExtractionPrompt } from '../../prompts';
 import { BULK_DATA_THRESHOLD_LENGTH } from '../constants';
 
 // Bulk Processing Helpers
-import { llmChunkTransactions } from '../bulk/llm-chunking';
+import { llmChunkTransactions } from '../bulk/llmChunkTransactions';
 import { deduplicateTransactions, getCategoryBreakdown } from '../bulk/processing-helpers';
 // Removed unused categorizeTransaction import (appStore.addTransactions likely handles categorization implicitly or it happens in parser)
 import type { Transaction } from '$lib/stores/types';
@@ -110,7 +110,10 @@ export async function handleBulkData(
 							{ role: 'user' as const, content: extractionPrompt }
 						];
 
-						const aiResponse = await llmChat(extractionMessages, { temperature: 0.1 });
+						const aiResponse = await llmChat(extractionMessages, {
+							temperature: 0.1,
+							rawUserText: chunk
+						});
 
 						// PARSE AND VALIDATE RESPONSE (logic remains the same)
 						let parsedData: unknown = parseJsonFromAiResponse(aiResponse);

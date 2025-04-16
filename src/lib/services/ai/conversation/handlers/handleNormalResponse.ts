@@ -54,10 +54,13 @@ export async function handleNormalResponse(
 				role: msg.role as 'user' | 'assistant' | 'system',
 				content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)
 			})),
-			{ role: currentMessage.role as 'user' | 'assistant' | 'system', content: currentMessage.content }
+			{
+				role: currentMessage.role as 'user' | 'assistant' | 'system',
+				content: currentMessage.content
+			}
 		];
 
-		const aiResponse = await llmChat(messagesToAi, { temperature: 0.7 });
+		const aiResponse = await llmChat(messagesToAi, { temperature: 0.7, rawUserText: message });
 
 		if (!aiResponse?.trim()) {
 			throw new Error('AI returned an empty response.');

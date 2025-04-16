@@ -65,7 +65,6 @@ export async function handleInitialData(
 	console.log(`[InitialDataHandler] Generated batchId: ${newBatchId}`);
 
 	try {
-		// Prepare prompt and call LLM for extraction
 		const today = new Date().toISOString().split('T')[0];
 		const extractionPrompt = getExtractionPrompt(message, today);
 		const messages = [
@@ -73,7 +72,7 @@ export async function handleInitialData(
 			{ role: 'user' as const, content: extractionPrompt }
 		];
 
-		const aiResponse = await llmChat(messages, { temperature: 0.2 });
+		const aiResponse = await llmChat(messages, { temperature: 0.2, rawUserText: message });
 
 		// Attempt to parse the response, passing the batch ID
 		const parsedTransactions = parseTransactionsFromLLMResponse(aiResponse, newBatchId);

@@ -1,210 +1,125 @@
+// ─────────────────────────  analytics.ts  ─────────────────────────
 import type { Transaction } from '$lib/stores/types';
 
-import {
-	llmGenerateJson,
-	isLLMAvailable,
-	getLLMFallbackResponse,
-	chooseBackendForTask
-} from './ai/llm';
+/* ------------------------------------------------------------------
+   1)  SUMMARY  ——————————————————————————————————————————————— */
+export function calculateFinancialSummary(txns: Transaction[]) {
+	// gross figures
+	const income = txns
+		.filter((t) => t.direction === 'in')
+		.reduce((sum, t) => sum + (t.amount ?? 0), 0);
 
-import { parseJsonFromAiResponse } from '$lib/utils/helpers';
+	const expense = txns
+		.filter((t) => t.direction === 'out')
+		.reduce((sum, t) => sum + (t.amount ?? 0), 0);
 
-export async function calculateFinancialSummary(transactions: Transaction[]) {
-	try {
-		const stats = computeBasicStats(transactions);
-		let analysisText: string | null = null;
+	const net = income - expense;
+	const savingsRate = income === 0 ? 0 : +(100 * (net / income)).toFixed(1);
 
-		const llmAvailable = await isLLMAvailable();
-
-		if (llmAvailable && transactions.length > 0) {
-			try {
-				analysisText = await getLLMAnalysis(transactions, stats);
-			} catch (llmError) {
-				console.error('Error getting LLM analysis:', llmError);
-				analysisText = 'AI analysis currently unavailable due to an error.';
-			}
-		}
-
-		return {
-			...stats,
-			analysis: analysisText
-		};
-	} catch (error) {
-		console.error('Error calculating financial summary:', error);
-
-		return { ...computeBasicStats(transactions), analysis: null };
+	// by‑category breakdown (positive for income, negative for outflow)
+	const byCategory: Record<string, number> = {};
+	for (const t of txns) {
+		if (!t.category) continue;
+		const amt = (t.direction === 'out' ? -1 : 1) * (t.amount ?? 0);
+		byCategory[t.category] = (byCategory[t.category] ?? 0) + amt;
 	}
-}
 
-function computeBasicStats(transactions: Transaction[]) {
-	const incomeTransactions = transactions.filter((t) => t.category !== 'Expenses');
-	const expenseTransactions = transactions.filter((t) => t.category === 'Expenses');
-	const incomeAmounts = incomeTransactions.map((t) => Number(t.amount || 0));
-	const expenseAmounts = expenseTransactions.map((t) => Number(t.amount || 0));
-	const totalIncome = incomeAmounts.reduce((sum, amount) => sum + amount, 0);
-	const totalExpenses = expenseAmounts.reduce((sum, amount) => sum + amount, 0);
-	const netCashflow = totalIncome - totalExpenses;
-	const avgIncome = incomeAmounts.length > 0 ? totalIncome / incomeAmounts.length : 0;
-	const avgExpense = expenseAmounts.length > 0 ? totalExpenses / expenseAmounts.length : 0;
-	const highestIncome = Math.max(...(incomeAmounts.length > 0 ? incomeAmounts : [0]));
-	const highestExpense = Math.max(...(expenseAmounts.length > 0 ? expenseAmounts : [0]));
+	// simple month‑over‑month cash‑flow trend
+	const byMonth: Record<string, number> = {};
+	for (const t of txns) {
+		const [y, m] = t.date.split('-'); // YYYY‑MM‑DD
+		const bucket = `${y}-${m}`; // YYYY‑MM
+		const amt = (t.direction === 'out' ? -1 : 1) * (t.amount ?? 0);
+		byMonth[bucket] = (byMonth[bucket] ?? 0) + amt;
+	}
+
 	return {
-		totalIncome,
-		totalExpenses,
-		netCashflow,
-		avgIncome,
-		avgExpense,
-		highestIncome,
-		highestExpense,
-		savingsRate: totalIncome > 0 ? (netCashflow / totalIncome) * 100 : 0
+		income,
+		expense,
+		net,
+		savingsRate, // %
+		byCategory, // { Grocery: -123.45, Salary: 2000 … }
+		byMonth // { '2025‑04': 1500, '2025‑05': -200 … }
 	};
 }
 
-async function getLLMAnalysis(transactions: Transaction[], stats: any): Promise<string | null> {
-	const transactionSample = transactions.slice(0, 25).map((t) => ({
-		date: t.date,
-		description: t.description,
-		amount: Number(t.amount || 0),
-		category: t.category
-	}));
+/* ------------------------------------------------------------------
+   2)  ANOMALIES  (very lightweight heuristic)
+       A transaction is “large” if it’s > 3× its category’s median.
+------------------------------------------------------------------- */
+export function detectAnomalies(txns: Transaction[]) {
+	const grouped: Record<string, number[]> = {};
+	for (const t of txns) {
+		if (!t.category || t.amount == null) continue;
+		(grouped[t.category] ??= []).push(Math.abs(t.amount));
+	}
 
-	const prompt = `
-You are a financial analyst. Analyze these transaction statistics and provide insights:
+	const med = (arr: number[]) => arr.sort((a, b) => a - b)[Math.floor(arr.length / 2)] ?? 0;
 
-Transaction Statistics:
-- Total Income: $${stats.totalIncome.toFixed(2)}
-- Total Expenses: $${stats.totalExpenses.toFixed(2)}
-- Net Cashflow: $${stats.netCashflow.toFixed(2)}
-- Savings Rate: ${stats.savingsRate.toFixed(1)}%
+	const medians: Record<string, number> = {};
+	for (const c in grouped) medians[c] = med(grouped[c]);
 
-Sample Transaction Data (up to 25 transactions):
-${JSON.stringify(transactionSample, null, 2)}
-
-Provide a concise financial analysis (max 3 paragraphs) including:
-1. Overview of the financial situation based ONLY on the provided stats and sample.
-2. Key observations or potential areas of interest (e.g., high savings rate, significant expense category in sample).
-3. 1-2 brief, general suggestions based on the stats (e.g., "Consider reviewing expense categories if net cashflow is negative").
-
-Format your response as a JSON object with a single key "analysis" containing the analysis text string.
-Example: {"analysis": "The net cashflow is positive..."}
-CRITICAL: Output ONLY the raw JSON object. No preamble or explanation.
-    `.trim();
-
-	const backend = await chooseBackendForTask({
-		type: 'json',
-		complexity: 'medium',
-		inputLength: prompt.length
+	const anomalies = txns.filter((t) => {
+		const base = medians[t.category ?? ''];
+		return base > 0 && Math.abs(t.amount ?? 0) > 3 * base;
 	});
 
-	console.log(`[getLLMAnalysis] Using ${backend} backend for financial analysis`);
-
-	try {
-		const jsonResponse = await llmGenerateJson(prompt, undefined, { temperature: 0.5 }, backend);
-
-		const parsedJson = parseJsonFromAiResponse<{ analysis: string }>(jsonResponse);
-
-		if (parsedJson && typeof parsedJson.analysis === 'string') {
-			return parsedJson.analysis;
-		} else {
-			console.warn('[getLLMAnalysis] Failed to parse analysis from LLM response:', jsonResponse);
-
-			return jsonResponse || 'AI analysis could not be parsed.';
-		}
-	} catch (error) {
-		console.error('Error getting LLM analysis:', error);
-
-		return `AI analysis unavailable: ${getLLMFallbackResponse(error)}`;
-	}
+	return { anomalies };
 }
 
-export async function detectAnomalies(transactions: Transaction[]): Promise<{ anomalies: any[] }> {
-	if (transactions.length < 5) {
-		return { anomalies: [] };
+/* ------------------------------------------------------------------
+   3)  “PREDICTION”  (naïve average monthly cash‑flow projection)
+------------------------------------------------------------------- */
+export function predictFutureTransactions(txns: Transaction[]) {
+	if (txns.length === 0) return null;
+
+	// bucket by month → total cash‑flow
+	const buckets: Record<string, number> = {};
+	for (const t of txns) {
+		const key = t.date.slice(0, 7); // YYYY‑MM
+		const amt = (t.direction === 'out' ? -1 : 1) * (t.amount ?? 0);
+		buckets[key] = (buckets[key] ?? 0) + amt;
 	}
 
-	const llmAvailable = await isLLMAvailable();
-	if (!llmAvailable) {
-		console.log('[detectAnomalies] LLM not available, skipping.');
-		return { anomalies: [] };
-	}
+	const monthlyTotals = Object.values(buckets);
+	if (monthlyTotals.length < 2) return null; // nothing to extrapolate
 
-	try {
-		const transactionData = transactions.map((t, index) => ({
-			index,
-			date: t.date,
-			description: t.description,
-			amount: Number(t.amount || 0),
-			category: t.category
-		}));
+	const avg = +(monthlyTotals.reduce((s, v) => s + v, 0) / monthlyTotals.length).toFixed(2);
 
-		const prompt = `
-You are a financial anomaly detection system. Analyze the following list of transactions (with their original index) and identify potential anomalies based on unusual amounts, descriptions, patterns, or potential duplicates.
-
-Transaction Data:
-${JSON.stringify(transactionData, null, 2)}
-
-Identify up to 3 potential anomalies. For each anomaly, provide:
-- index: The original index of the transaction from the input list.
-- reason: A brief explanation of why it's flagged (e.g., "Unusually high amount for category X", "Possible duplicate of transaction Y", "Vague description").
-- risk: A risk level ('low', 'medium', 'high').
-
-Format your response as a JSON object with a single key "anomalies", which is an array of objects containing "index", "reason", and "risk".
-Example: {"anomalies": [{"index": 5, "reason": "Amount is much higher than typical expenses", "risk": "medium"}]}
-CRITICAL: Output ONLY the raw JSON object. No preamble or explanation. If no anomalies are found, return {"anomalies": []}.
-        `.trim();
-
-		const backend = await chooseBackendForTask({
-			type: 'json',
-			complexity: 'high',
-			inputLength: prompt.length
-		});
-
-		console.log(`[detectAnomalies] Using ${backend} backend for anomaly detection`);
-
-		const jsonResponse = await llmGenerateJson(prompt, undefined, { temperature: 0.3 }, backend);
-
-		const parsedJson = parseJsonFromAiResponse<{ anomalies: any[] }>(jsonResponse);
-
-		if (parsedJson && Array.isArray(parsedJson.anomalies)) {
-			return { anomalies: parsedJson.anomalies };
-		} else {
-			console.warn('[detectAnomalies] Failed to parse anomalies from LLM response:', jsonResponse);
-			return { anomalies: [] };
-		}
-	} catch (error) {
-		console.error('Error detecting anomalies:', error);
-
-		return { anomalies: [] };
-	}
+	return { projectedMonthlyNet: avg };
 }
 
-export async function predictFutureTransactions(transactions: Transaction[]) {
-	if (transactions.length < 10) {
-		return {
-			predictedIncome: 0,
-			predictedExpenses: 0,
-			reliability: 'low',
-			message: 'Not enough data...'
-		};
-	}
-	try {
-		const monthlySummaries = new Map();
+/* ------------------------------------------------------------------
+   4)  LLM‑FREE WRAPPER  (keeps AppStore API untouched)
+------------------------------------------------------------------- */
+let lastSig = ''; // cache so we don’t recalc needlessly
+let lastResult: ReturnType<typeof calculateFinancialSummary> & {
+	anomalies: ReturnType<typeof detectAnomalies>['anomalies'];
+	predictions: ReturnType<typeof predictFutureTransactions>;
+};
 
-		const monthlyData = [...monthlySummaries.entries()];
+export async function getLLMAnalysis(txns: Transaction[]) {
+	// cheap hash so we don’t redo work if nothing changed
+	const sig = fnv1a32(JSON.stringify(txns));
+	if (sig === lastSig && lastResult) return lastResult;
 
-		return {
-			predictedIncome: 1000,
-			predictedExpenses: 800,
-			reliability: 'medium',
-			message: 'Prediction based on X months.'
-		};
-	} catch (error) {
-		console.error('Error predicting future transactions:', error);
-		return {
-			predictedIncome: 0,
-			predictedExpenses: 0,
-			reliability: 'none',
-			message: 'Error generating predictions.'
-		};
+	const summary = calculateFinancialSummary(txns);
+	const anomalies = detectAnomalies(txns).anomalies;
+	const predictions = predictFutureTransactions(txns);
+
+	lastSig = sig;
+	lastResult = { ...summary, anomalies, predictions };
+	return lastResult;
+}
+
+/* ------------------------------------------------------------------
+   5)  tiny FNV‑1a hash (32‑bit) — keeps caching constant‑time
+------------------------------------------------------------------- */
+function fnv1a32(str: string): string {
+	let h = 0x811c9dc5;
+	for (let i = 0; i < str.length; i++) {
+		h ^= str.charCodeAt(i);
+		h = (h >>> 0) * 0x01000193;
 	}
+	return ('0000000' + (h >>> 0).toString(16)).slice(-8);
 }

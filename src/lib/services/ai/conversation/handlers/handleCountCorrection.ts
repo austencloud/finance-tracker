@@ -71,7 +71,7 @@ export async function handleCountCorrection(
 			{ role: 'user' as const, content: reExtractionPrompt }
 		];
 
-		const aiResponse = await llmChat(messages, { temperature: 0.2 });
+		const aiResponse = await llmChat(messages, { temperature: 0.2, rawUserText: message });
 
 		const newCorrectionBatchId = uuidv4();
 

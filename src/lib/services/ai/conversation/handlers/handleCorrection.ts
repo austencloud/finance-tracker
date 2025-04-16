@@ -104,8 +104,7 @@ export async function handleCorrection(
 
 	try {
 		const prompt = getCorrectionParsingPrompt(message, targetTxnForPrompt, availableCategories);
-		// Use llmGenerateJson instead of deepseekGenerateJson
-		const jsonResponse = await llmGenerateJson(prompt);
+		const jsonResponse = await llmGenerateJson([{ role: 'user', content: prompt }]);
 		parsedCorrection = parseJsonFromAiResponse<CorrectionParseResult>(jsonResponse);
 	} catch (error) {
 		console.error('[CorrectionHandler] LLM call failed:', error);

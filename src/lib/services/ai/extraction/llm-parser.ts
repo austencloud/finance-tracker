@@ -11,107 +11,52 @@ import {
 } from '$lib/schemas/LLMOutputSchema';
 import { TransactionSchema } from '$lib/schemas/TransactionSchema'; // Schema now includes batchId
 import type { Transaction } from '$lib/stores/types'; // Type includes batchId
+import { extractCleanJson } from '../parsers/fixJson';
 
 // fixCommonJsonErrors function remains the same...
 
-export function fixCommonJsonErrors(jsonStr: string): string {
-	if (!jsonStr || typeof jsonStr !== 'string') return '';
-	let fixed = jsonStr.trim();
-
-	// 1. Aggressively try to isolate the core JSON object or array first
-	const jsonStartMatch = fixed.match(/[{\[]/); // Find first '{' or '['
-	const jsonEndMatch = fixed.match(/}[^}]*$/); // Find last '}'
-	const arrayEndMatch = fixed.match(/][^\]]*$/); // Find last ']'
-
-	if (jsonStartMatch) {
-		const startIndex = jsonStartMatch.index!;
-		let endIndex = -1;
-		if (jsonEndMatch && (!arrayEndMatch || jsonEndMatch.index! > arrayEndMatch.index!)) {
-			endIndex = jsonEndMatch.index! + 1; // Include the brace
-		} else if (arrayEndMatch) {
-			endIndex = arrayEndMatch.index! + 1; // Include the bracket
-		}
-
-		if (endIndex > startIndex) {
-			fixed = fixed.substring(startIndex, endIndex);
-			console.log('[Fixer] Isolated potential JSON block.');
-		} else {
-			console.warn(
-				'[Fixer] Could not clearly isolate JSON block, attempting fixes on whole string.'
-			);
-		}
-	} else {
-		console.warn('[Fixer] No opening brace/bracket found, attempting fixes on whole string.');
-	}
-
-	// 2. Replace Pythonic keywords AFTER isolating
-	fixed = fixed.replace(/\bNone\b/g, 'null');
-	fixed = fixed.replace(/\bTrue\b/g, 'true');
-	fixed = fixed.replace(/\bFalse\b/g, 'false');
-
-	// 3. Attempt to quote unquoted keys (apply carefully)
-	try {
-		// This regex might still be imperfect for all cases
-		fixed = fixed.replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)(\s*:)/g, '$1"$2"$3');
-		// Attempt to catch keys at the very beginning of the object
-		fixed = fixed.replace(/^\{\s*([a-zA-Z_][a-zA-Z0-9_]*)(\s*:)/g, '{\"$1\"$2');
-	} catch (e) {
-		console.warn('Regex error during key quoting fix:', e);
-	}
-
-	// 4. Remove comments
-	fixed = fixed.replace(/\/\/.*$/gm, '');
-	fixed = fixed.replace(/\/\*[\s\S]*?\*\//g, '');
-
-	// 5. Remove trailing commas repeatedly AFTER other fixes
-	try {
-		let prev = '';
-		while (prev !== fixed) {
-			prev = fixed;
-			fixed = fixed.replace(/,\s*([\]}])/g, '$1');
-		}
-	} catch (e) {
-		console.warn('Regex error during trailing comma fix:', e);
-	}
-
-	return fixed.trim(); // Trim final result
-}
-// --- Add batchId parameter ---
 export function parseTransactionsFromLLMResponse(
 	jsonString: string,
-	batchId: string // <-- Added parameter
+	batchId: string
 ): Transaction[] {
 	console.log(`[LLM Parser] Attempting to parse/validate JSON for batch ${batchId}...`);
-	// ... (parsing logic with fixCommonJsonErrors remains the same) ...
 	if (!jsonString || typeof jsonString !== 'string' || jsonString.trim().length === 0) {
 		console.warn('[LLM Parser] Received empty or invalid input string.');
 		return [];
 	}
+
+	// Harden: Strip everything before the first '{' or '['
+	const firstJsonChar = jsonString.search(/[{\[]/);
+	if (firstJsonChar === -1) {
+		console.warn('[LLM Parser] No JSON start found in string:', jsonString.slice(0, 120));
+		return [];
+	}
+	const jsonCandidate = jsonString.slice(firstJsonChar).trim();
+
 	let parsedJson: unknown;
 	try {
-		parsedJson = JSON.parse(jsonString);
+		parsedJson = JSON.parse(jsonCandidate);
 	} catch (parseError) {
 		console.warn('[LLM Parser] Initial JSON parse failed. Trying with fixes...');
 		try {
-			const fixedJsonString = fixCommonJsonErrors(jsonString);
+			const fixedJsonString = extractCleanJson(jsonCandidate);
+			if (fixedJsonString == null) throw new Error('extractCleanJson returned null');
 			parsedJson = JSON.parse(fixedJsonString);
 			console.log('[LLM Parser] Parsed successfully after attempting fixes.');
 		} catch (fixParseError) {
 			console.error('[LLM Parser] Failed to parse JSON even after fixing attempts:', fixParseError);
 			console.error('[LLM Parser] Original problematic JSON string:', jsonString);
-			return []; // Parsing failed definitively
+			return [];
 		}
 	}
 
-	// --- Zod Validation ---
 	const validationResult = LLMTransactionResponseSchema.safeParse(parsedJson);
 
 	if (!validationResult.success) {
 		const arrayValidationResult = z.array(LLMTransactionExtractionSchema).safeParse(parsedJson);
 		if (arrayValidationResult.success) {
 			console.log('[LLM Parser] Validated as direct transaction array.');
-			// --- Pass batchId down ---
-			return convertLLMDataToTransactions(arrayValidationResult.data, batchId); // <-- Pass batchId
+			return convertLLMDataToTransactions(arrayValidationResult.data, batchId);
 		} else {
 			console.error('[LLM Parser] Zod validation failed:', validationResult.error.flatten());
 			console.error('[LLM Parser] Parsed JSON object was:', parsedJson);
@@ -122,8 +67,7 @@ export function parseTransactionsFromLLMResponse(
 	console.log(
 		`[LLM Parser] Zod validation successful. Found ${validationResult.data.transactions.length} raw transactions.`
 	);
-	// --- Pass batchId down ---
-	return convertLLMDataToTransactions(validationResult.data.transactions, batchId); // <-- Pass batchId
+	return convertLLMDataToTransactions(validationResult.data.transactions, batchId);
 }
 
 // --- Add batchId parameter ---

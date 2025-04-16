@@ -2,6 +2,9 @@
 
 import { OLLAMA_CONFIG } from '$lib/config/ai-config';
 
+const STANDARD_MODEL = 'llama3:latest'; // fast 8‑B model
+const HEAVY_MODEL = 'deepseek-r1:8b'; // bigger, deeper reasoning
+
 // Track active model (initialized from config)
 let activeModel = OLLAMA_CONFIG.model;
 
@@ -9,15 +12,13 @@ let activeModel = OLLAMA_CONFIG.model;
  * Sets the active Ollama model to use for future requests
  */
 export function setOllamaModel(modelName: string): void {
-	if (!modelName || typeof modelName !== 'string' || modelName.trim() === '') {
-		console.warn('[setOllamaModel] Invalid model name, using default:', OLLAMA_CONFIG.model);
-		activeModel = OLLAMA_CONFIG.model;
-		return;
-	}
-
-	console.log(`[setOllamaModel] Changing active model from ${activeModel} to ${modelName}`);
-	activeModel = modelName.trim();
-}
+	const next = (modelName ?? '').trim();
+	if (!next) return;                         // safeguard
+	if (next === activeModel) return;          // <─ early‑exit (key change)
+  
+	console.log(`[setOllamaModel] Changing active model from ${activeModel} to ${next}`);
+	activeModel = next;
+  }
 
 /**
  * Gets the currently active Ollama model name
@@ -110,90 +111,29 @@ export async function listOllamaModels(): Promise<string[]> {
 /**
  * Checks if Ollama is running and the current model is available.
  * More reliable check that handles API changes in recent Ollama versions.
- */
-export async function isOllamaAvailable(): Promise<boolean> {
-	if (!activeModel) return false;
+ */ // ollama-client.ts
+// ollama‑client.ts
+export async function isOllamaAvailable(opts: { timeout?: number } = {}): Promise<boolean> {
+	const ctl = new AbortController();
+	const timer = setTimeout(() => ctl.abort(), opts.timeout ?? 2000);
 
-	// First, check if the Ollama service is running at all
 	try {
-		// Try the newer API endpoint for Ollama 0.1.14+
-		const baseUrl = `${OLLAMA_CONFIG.apiUrl}`;
-
-		const baseResponse = await fetchWithTimeout(baseUrl, {
+		// apiUrl already ends with /api
+		const res = await fetch(`${OLLAMA_CONFIG.apiUrl}/tags`, {
 			method: 'GET',
-			timeout: 3000 // Short timeout
-		}).catch(() => null);
-
-		// If base request fails, Ollama is definitely not running
-		if (!baseResponse || !baseResponse.ok) {
-			console.log('[isOllamaAvailable] Ollama service not running');
-			return false;
-		}
-
-		// If base check passes, try to check the specific model
-		// Ollama API has changed how to check models in different versions
-
-		// Try first approach - list models
-		try {
-			const tagsUrl = `${OLLAMA_CONFIG.apiUrl}/tags`;
-			const tagsResponse = await fetchWithTimeout(tagsUrl, {
-				method: 'GET',
-				timeout: 3000
-			});
-
-			if (tagsResponse.ok) {
-				const data = await tagsResponse.json();
-				if (data && Array.isArray(data.models)) {
-					const modelExists = data.models.some((model: any) => model.name === activeModel);
-					return modelExists;
-				}
-			}
-		} catch (e) {
-			console.log('[isOllamaAvailable] Could not check models via /tags');
-		}
-
-		// Try second approach - direct model check (newer Ollama versions)
-		try {
-			const modelUrl = `${OLLAMA_CONFIG.apiUrl}/show`;
-			const modelResponse = await fetchWithTimeout(modelUrl, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ name: activeModel }),
-				timeout: 3000
-			});
-
-			return modelResponse.ok;
-		} catch (e) {
-			console.log('[isOllamaAvailable] Could not check model via /show');
-		}
-
-		// If nothing worked, one last attempt - just try a simple chat request
-		try {
-			// Very simple message to check if the model responds
-			const chatUrl = `${OLLAMA_CONFIG.apiUrl}/chat`;
-			const chatResponse = await fetchWithTimeout(chatUrl, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					model: activeModel,
-					messages: [{ role: 'user', content: 'hi' }],
-					stream: false
-				}),
-				timeout: 5000
-			});
-
-			return chatResponse.ok;
-		} catch (e) {
-			console.log('[isOllamaAvailable] Could not check via test chat request');
-			return false;
-		}
-	} catch (error) {
-		console.error(
-			'[isOllamaAvailable] Error checking Ollama availability:',
-			error instanceof Error ? error.message : error
-		);
-		return false;
+			signal: ctl.signal
+		});
+		return res.ok; // 200 → up
+	} catch {
+		return false; // network / timeout / non‑200
+	} finally {
+		clearTimeout(timer);
 	}
+}
+function pickModel(prompt: string, opts?: { forceHeavy?: boolean }): string {
+	const tokenEstimate = Math.ceil(prompt.length / 4);
+	if (opts?.forceHeavy || tokenEstimate > 300) return HEAVY_MODEL;
+	return STANDARD_MODEL;
 }
 /**
  * Sends messages to the Ollama Chat API endpoint.

@@ -12,10 +12,9 @@ import {
 	// parseJsonFromAiResponse, // Not directly used here, parser does it
 	textLooksLikeTransaction
 } from '$lib/utils/helpers';
-import { llmChat } from '../../deepseek-client';
 import { getExtractionPrompt, getSystemPrompt } from '../../prompts';
 import { parseTransactionsFromLLMResponse } from '../../extraction/llm-parser';
-import { getLLMFallbackResponse } from '../../llm';
+import { getLLMFallbackResponse, llmChat } from '../../llm';
 
 // --- Helper Functions (Normalization, Key Creation - remain the same) ---
 function normalizeDescription(desc: string | undefined | null): string {
@@ -59,11 +58,11 @@ export async function handleExtraction(
 		const today = new Date().toISOString().split('T')[0];
 		const extractionPrompt = getExtractionPrompt(message, today);
 		const messages = [
-			{ role: 'system', content: getSystemPrompt(today) },
-			{ role: 'user', content: extractionPrompt }
+			{ role: 'system' as const, content: getSystemPrompt(today) },
+			{ role: 'user' as const, content: extractionPrompt }
 		];
 
-		const aiResponse = await llmChat(messages, { temperature: 0.2 });
+		const aiResponse = await llmChat(messages, { temperature: 0.2, rawUserText: message });
 
 		// --- Pass the generated batchId to the parser ---
 		const parsedTransactions = parseTransactionsFromLLMResponse(aiResponse, batchId);

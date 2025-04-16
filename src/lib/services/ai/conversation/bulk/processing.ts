@@ -1,7 +1,7 @@
 // src/lib/services/ai/conversation/bulk/processing.ts
 import { get } from 'svelte/store';
 import { extractTransactionsFromText } from '../../extraction/orchestrator';
-import { llmChunkTransactions } from './llm-chunking';
+import { llmChunkTransactions } from './llmChunkTransactions';
 import { deduplicateTransactions, getCategoryBreakdown } from './processing-helpers';
 import { v4 as uuidv4 } from 'uuid';
 

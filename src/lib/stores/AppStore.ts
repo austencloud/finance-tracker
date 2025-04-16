@@ -1,4 +1,4 @@
-import { writable, get, derived, type Writable } from 'svelte/store';
+import { writable, get, type Writable } from 'svelte/store';
 import { v4 as uuidv4 } from 'uuid';
 
 import {
@@ -13,18 +13,51 @@ import type {
 	Transaction,
 	Category,
 	CategoryTotals,
-	UIState,
-	FilterState,
 	SortField,
 	ConversationState,
 	ConversationMessage,
 	BulkProcessingState,
 	ProcessingChunk,
 	ChunkStatus,
-	UserMood,
 	AnalysisState
 } from './types';
-import { AI_BACKEND_TO_USE, OLLAMA_CONFIG } from '$lib/config/ai-config';
+import { OLLAMA_CONFIG } from '$lib/config/ai-config';
+
+// ────────────────────────────────────────────────────────────────────────────
+//  HELPERS
+// ────────────────────────────────────────────────────────────────────────────
+
+const createMsg = (role: ConversationMessage['role'], content: string): ConversationMessage => ({
+	id: uuidv4(),
+	role,
+	content,
+	timestamp: Date.now()
+});
+
+let analysisTimeout: ReturnType<typeof setTimeout> | null = null;
+const ANALYSIS_DEBOUNCE_MS = 500;
+
+function debounceAnalysis(run: () => void) {
+	if (analysisTimeout) clearTimeout(analysisTimeout);
+	analysisTimeout = setTimeout(run, ANALYSIS_DEBOUNCE_MS);
+}
+
+function showTemporarySuccessMessage(duration = 3000) {
+	appStateStore.update((s) => ({
+		...s,
+		ui: { ...s.ui, showSuccessMessage: true }
+	}));
+	setTimeout(() => {
+		appStateStore.update((s) => ({
+			...s,
+			ui: { ...s.ui, showSuccessMessage: false }
+		}));
+	}, duration);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+//  INITIAL CONSTANTS
+// ────────────────────────────────────────────────────────────────────────────
 
 const initialCategories: Category[] = [
 	'PayPal Transfers',
@@ -40,12 +73,10 @@ const initialCategories: Category[] = [
 
 const initialConversationState: ConversationState = {
 	messages: [
-		{
-			role: 'assistant',
-			content:
-				"Hello! I'm your AI Transaction Assistant. Paste your transaction data or describe your spending and I'll help you organize it.",
-			timestamp: Date.now()
-		}
+		createMsg(
+			'assistant',
+			"Hello! I'm your AI Transaction Assistant. Paste your transaction data or describe your spending and I'll help you organise it."
+		)
 	],
 	status: '',
 	isProcessing: false,
@@ -53,17 +84,14 @@ const initialConversationState: ConversationState = {
 	userMood: 'unknown',
 	_internal: {
 		initialPromptSent: false,
-		// Existing states
 		waitingForDirectionClarification: false,
 		clarificationTxnIds: [],
 		lastUserMessageText: '',
 		lastExtractionBatchId: null,
 		waitingForDuplicateConfirmation: false,
 		pendingDuplicateTransactions: [],
-		// --- Initialize NEW states ---
 		waitingForCorrectionClarification: false,
 		pendingCorrectionDetails: null,
-		// --- Add LLM availability tracking ---
 		llmAvailable: false
 	}
 };
@@ -91,11 +119,8 @@ const initialState: AppState = {
 		selectedTransactionId: null,
 		showTransactionDetails: false,
 		currentCategory: initialCategories.includes('Expenses') ? 'Expenses' : initialCategories[0],
-		selectedModel: AI_BACKEND_TO_USE === 'ollama' ? OLLAMA_CONFIG.model : 'deepseek-chat',
-		availableModels: [
-			{ id: 'deepseek-chat', name: 'DeepSeek Chat', backend: 'deepseek' },
-			{ id: OLLAMA_CONFIG.model, name: OLLAMA_CONFIG.model, backend: 'ollama' }
-		]
+		selectedModel: OLLAMA_CONFIG.model,
+		availableModels: [{ id: OLLAMA_CONFIG.model, name: OLLAMA_CONFIG.model, backend: 'ollama' }]
 	},
 	filters: {
 		category: 'all',
@@ -108,50 +133,218 @@ const initialState: AppState = {
 	analysis: initialAnalysisState
 };
 
+// ────────────────────────────────────────────────────────────────────────────
+//  STORE INSTANCE
+// ────────────────────────────────────────────────────────────────────────────
+
 const appStateStore: Writable<AppState> = writable(initialState);
 
-function showTemporarySuccessMessage(duration = 3000) {
-	appStateStore.update((state) => ({
-		...state,
-		ui: { ...state.ui, showSuccessMessage: true }
-	}));
-	setTimeout(() => {
-		appStateStore.update((state) => ({
-			...state,
-			ui: { ...state.ui, showSuccessMessage: false }
-		}));
-	}, duration);
-}
-
-let analysisTimeout: ReturnType<typeof setTimeout> | null = null;
-const ANALYSIS_DEBOUNCE_MS = 500;
-
-function triggerAnalysisRun() {
-	if (analysisTimeout) {
-		clearTimeout(analysisTimeout);
-	}
-	analysisTimeout = setTimeout(() => {
-		if (appStore && typeof appStore.runFinancialAnalysis === 'function') {
-			console.log('[AppStore] Debounced: Running financial analysis...');
-			appStore.runFinancialAnalysis();
-		} else {
-			console.warn('[AppStore] Debounced: appStore or runFinancialAnalysis not ready yet.');
-		}
-	}, ANALYSIS_DEBOUNCE_MS);
-}
+// ────────────────────────────────────────────────────────────────────────────
+//  STORE API (PUBLIC)
+// ────────────────────────────────────────────────────────────────────────────
 
 export const appStore = {
 	subscribe: appStateStore.subscribe,
 
-	getTransactionById: (id: string | null): Transaction | null => {
-		if (!id) return null;
-		const state = get(appStateStore);
-		return state.transactions.find((t) => t.id === id) || null;
+	// Conversation helpers
+	addConversationMessage(role: 'user' | 'assistant', content: string) {
+		appStateStore.update((s) => ({
+			...s,
+			conversation: {
+				...s.conversation,
+				messages: [...s.conversation.messages, createMsg(role, content)]
+			}
+		}));
 	},
-	setCorrectionClarificationNeeded: (
+
+	resetConversation() {
+		appStateStore.update((s) => ({
+			...s,
+			conversation: {
+				...initialConversationState,
+				messages: [createMsg('assistant', 'Okay, starting fresh. How can I help you?')]
+			}
+		}));
+	},
+
+	setConversationStatus(status: string, progress?: number) {
+		appStateStore.update((s) => ({
+			...s,
+			conversation: {
+				...s.conversation,
+				status,
+				progress:
+					progress !== undefined ? Math.max(0, Math.min(100, progress)) : s.conversation.progress
+			}
+		}));
+	},
+
+	setConversationProcessing(isProcessing: boolean) {
+		appStateStore.update((s) => ({
+			...s,
+			conversation: {
+				...s.conversation,
+				isProcessing,
+				status: isProcessing ? s.conversation.status : '',
+				progress: isProcessing ? s.conversation.progress : 0
+			}
+		}));
+	},
+
+	setLLMAvailability(available: boolean) {
+		appStateStore.update((s) => ({
+			...s,
+			conversation: {
+				...s.conversation,
+				_internal: { ...s.conversation._internal, llmAvailable: available }
+			}
+		}));
+	},
+
+	// Transaction helpers
+	getTransactionById(id: string | null): Transaction | null {
+		if (!id) return null;
+		return get(appStateStore).transactions.find((t) => t.id === id) ?? null;
+	},
+
+	addTransactions(txns: Transaction[]) {
+		if (!txns.length) return;
+		appStateStore.update((state) => {
+			const existing = new Set(state.transactions.map((t) => t.id));
+			const uniq = txns
+				.map((t) => (t.id ? t : { ...t, id: uuidv4() }))
+				.filter((t) => !existing.has(t.id));
+			if (!uniq.length) return state;
+
+			showTemporarySuccessMessage();
+			debounceAnalysis(() => appStore.runFinancialAnalysis());
+			return { ...state, transactions: [...state.transactions, ...uniq] };
+		});
+	},
+
+	clearTransactions() {
+		if (!confirm('Are you sure you want to clear all transactions? This cannot be undone.')) return;
+		appStateStore.update((s) => ({ ...s, transactions: [] }));
+		appStore.runFinancialAnalysis();
+	},
+
+	deleteTransaction(id: string) {
+		appStateStore.update((state) => {
+			const txns = state.transactions.filter((t) => t.id !== id);
+			if (txns.length === state.transactions.length) return state;
+			debounceAnalysis(() => appStore.runFinancialAnalysis());
+			return {
+				...state,
+				transactions: txns,
+				ui: {
+					...state.ui,
+					selectedTransactionId:
+						state.ui.selectedTransactionId === id ? null : state.ui.selectedTransactionId,
+					showTransactionDetails:
+						state.ui.selectedTransactionId === id ? false : state.ui.showTransactionDetails
+				}
+			};
+		});
+	},
+
+	updateTransaction(updated: Transaction) {
+		appStateStore.update((state) => {
+			const idx = state.transactions.findIndex((t) => t.id === updated.id);
+			if (idx === -1) return state;
+			const txns = [...state.transactions];
+			txns[idx] = updated;
+			debounceAnalysis(() => appStore.runFinancialAnalysis());
+			return { ...state, transactions: txns };
+		});
+	},
+
+	assignCategory(transactionId: string, category: Category) {
+		const txn = appStore.getTransactionById(transactionId);
+		if (!txn) return;
+		appStore.updateTransaction({ ...txn, category });
+	},
+
+	addNotes(transactionId: string, notes: string) {
+		const txn = appStore.getTransactionById(transactionId);
+		if (!txn) return;
+		appStore.updateTransaction({ ...txn, notes });
+	},
+
+	// Sorting / filtering / UI
+	setFilterCategory(category: 'all' | Category) {
+		appStateStore.update((s) => ({ ...s, filters: { ...s.filters, category } }));
+	},
+
+	setSearchTerm(term: string) {
+		appStateStore.update((s) => ({ ...s, filters: { ...s.filters, searchTerm: term } }));
+	},
+
+	toggleSort(field: SortField) {
+		appStateStore.update((s) => {
+			const dir =
+				s.filters.sortField === field && s.filters.sortDirection === 'asc' ? 'desc' : 'asc';
+			return { ...s, filters: { ...s.filters, sortField: field, sortDirection: dir } };
+		});
+	},
+
+	selectTransactionForDetails(transactionId: string | null) {
+		appStateStore.update((state) => {
+			const selected = transactionId
+				? state.transactions.find((t) => t.id === transactionId)
+				: null;
+			return {
+				...state,
+				ui: {
+					...state.ui,
+					selectedTransactionId: transactionId,
+					showTransactionDetails: !!transactionId,
+					currentCategory: selected ? selected.category : state.ui.currentCategory
+				}
+			};
+		});
+	},
+
+	closeTransactionDetails() {
+		appStateStore.update((s) => ({
+			...s,
+			ui: { ...s.ui, selectedTransactionId: null, showTransactionDetails: false }
+		}));
+	},
+
+	setModalCategory(category: Category) {
+		appStateStore.update((s) => ({ ...s, ui: { ...s.ui, currentCategory: category } }));
+	},
+
+	setSelectedModel(modelId: string) {
+		appStateStore.update((s) => {
+			const exists = s.ui.availableModels.some((m) => m.id === modelId);
+			return exists ? { ...s, ui: { ...s.ui, selectedModel: modelId } } : s;
+		});
+	},
+
+	addCustomModel(modelId: string, autoSelect = true) {
+		if (!modelId.trim()) return;
+		appStateStore.update((s) => {
+			if (s.ui.availableModels.some((m) => m.id === modelId)) return s;
+			return {
+				...s,
+				ui: {
+					...s.ui,
+					selectedModel: autoSelect ? modelId : s.ui.selectedModel,
+					availableModels: [
+						...s.ui.availableModels,
+						{ id: modelId, name: modelId, backend: 'ollama' }
+					]
+				}
+			};
+		});
+	},
+
+	// --- All other methods remain unchanged below ---
+
+	setCorrectionClarificationNeeded(
 		pendingDetails: Exclude<AppState['conversation']['_internal']['pendingCorrectionDetails'], null>
-	) => {
-		console.log('[AppStore] Setting state: waitingForCorrectionClarification');
+	) {
 		appStateStore.update((state) => ({
 			...state,
 			conversation: {
@@ -160,17 +353,15 @@ export const appStore = {
 					...state.conversation._internal,
 					waitingForCorrectionClarification: true,
 					pendingCorrectionDetails: pendingDetails,
-					// Also clear the general correction context when asking for clarification
 					lastUserMessageText: '',
 					lastExtractionBatchId: null
 				}
 			}
 		}));
 	},
-	clearCorrectionClarificationState: () => {
-		console.log('[AppStore] Clearing state: waitingForCorrectionClarification');
+
+	clearCorrectionClarificationState() {
 		appStateStore.update((state) => {
-			// Check if we are actually waiting to avoid unnecessary updates
 			if (!state.conversation._internal.waitingForCorrectionClarification) {
 				return state;
 			}
@@ -187,19 +378,19 @@ export const appStore = {
 			};
 		});
 	},
-	setSelectedModel: (modelId: string) => {
-		appStateStore.update((state) => {
-			const model = state.ui.availableModels.find((m) => m.id === modelId);
-			if (!model) return state;
 
-			return {
-				...state,
-				ui: {
-					...state.ui,
-					selectedModel: modelId
+	setConversationClarificationNeeded(needed: boolean, txnIds: string[]) {
+		appStateStore.update((s) => ({
+			...s,
+			conversation: {
+				...s.conversation,
+				_internal: {
+					...s.conversation._internal,
+					waitingForDirectionClarification: needed,
+					clarificationTxnIds: needed ? txnIds : []
 				}
-			};
-		});
+			}
+		}));
 	},
 	getSortedFilteredTransactions: (): Transaction[] => {
 		const state = get(appStateStore);
@@ -257,6 +448,7 @@ export const appStore = {
 			return filters.sortDirection === 'asc' ? comparison : -comparison;
 		});
 	},
+
 	getCategoryTotals: (): CategoryTotals => {
 		const state = get(appStateStore);
 		const totals: CategoryTotals = {};
@@ -272,257 +464,9 @@ export const appStore = {
 		});
 		return totals;
 	},
-	setLLMAvailability: (available: boolean) => {
-		console.log(`[AppStore] Setting LLM availability to: ${available}`);
-		appStateStore.update((state) => ({
-			...state,
-			conversation: {
-				...state.conversation,
-				_internal: {
-					...state.conversation._internal,
-					llmAvailable: available
-				}
-			}
-		}));
-	},
-	addTransactions: (newTransactions: Transaction[]) => {
-		if (!Array.isArray(newTransactions) || newTransactions.length === 0) {
-			console.log('[AppStore.addTransactions] Received empty or invalid input. Skipping.');
-			return;
-		}
-		let itemsAdded = false;
-		let addedCount = 0;
-
-		appStateStore.update((state) => {
-			const currentIds = new Set(state.transactions.map((t) => t.id));
-			const uniqueNewTransactions = newTransactions.filter((newTxn) => {
-				if (!newTxn || typeof newTxn !== 'object') {
-					console.warn('[AppStore.addTransactions] Skipping invalid transaction object:', newTxn);
-					return false;
-				}
-				if (!newTxn.id) {
-					newTxn.id = uuidv4();
-					console.warn(
-						`[AppStore.addTransactions] Transaction missing ID, generated new one: ${newTxn.id}`,
-						newTxn
-					);
-				}
-				if (currentIds.has(newTxn.id)) {
-					console.log(`[AppStore.addTransactions] Skipping duplicate transaction ID: ${newTxn.id}`);
-					return false;
-				}
-				return true;
-			});
-
-			if (uniqueNewTransactions.length > 0) {
-				console.log(
-					'[AppStore.addTransactions] Attempting to add transactions to appStore:',
-					JSON.stringify(uniqueNewTransactions)
-				);
-				itemsAdded = true;
-				addedCount = uniqueNewTransactions.length;
-				return {
-					...state,
-					transactions: [...state.transactions, ...uniqueNewTransactions]
-				};
-			} else {
-				console.log('[AppStore.addTransactions] No unique transactions to add.');
-			}
-			return state;
-		});
-
-		if (itemsAdded) {
-			console.log(
-				`[AppStore.addTransactions] Successfully added ${addedCount} unique transaction(s).`
-			);
-			showTemporarySuccessMessage();
-			triggerAnalysisRun();
-		} else {
-			console.log('[AppStore.addTransactions] No items were added (duplicates or invalid).');
-		}
-	},
-	clearTransactions: () => {
-		if (confirm('Are you sure you want to clear all transactions? This cannot be undone.')) {
-			appStateStore.update((state) => ({ ...state, transactions: [] }));
-			triggerAnalysisRun();
-		}
-	},
-	deleteTransaction: (id: string) => {
-		let itemDeleted = false;
-		appStateStore.update((state) => {
-			const initialLength = state.transactions.length;
-			const newTransactions = state.transactions.filter((t) => t.id !== id);
-			itemDeleted = newTransactions.length < initialLength;
-			return {
-				...state,
-				transactions: newTransactions,
-				ui: {
-					...state.ui,
-					selectedTransactionId:
-						state.ui.selectedTransactionId === id ? null : state.ui.selectedTransactionId,
-					showTransactionDetails:
-						state.ui.selectedTransactionId === id ? false : state.ui.showTransactionDetails
-				}
-			};
-		});
-		if (itemDeleted) {
-			triggerAnalysisRun();
-		}
-	},
-	updateTransaction: (updatedTransaction: Transaction) => {
-		let itemUpdated = false;
-		appStateStore.update((state) => {
-			const index = state.transactions.findIndex((t) => t.id === updatedTransaction.id);
-			if (index !== -1) {
-				itemUpdated = true;
-				const updatedTransactions = [...state.transactions];
-				updatedTransactions[index] = updatedTransaction;
-				return { ...state, transactions: updatedTransactions };
-			}
-			return state;
-		});
-		if (itemUpdated) {
-			triggerAnalysisRun();
-		}
-	},
-	assignCategory: (transactionId: string, category: Category) => {
-		let itemUpdated = false;
-		appStateStore.update((state) => {
-			const index = state.transactions.findIndex((t) => t.id === transactionId);
-			if (index !== -1) {
-				itemUpdated = true;
-				const updatedTransactions = [...state.transactions];
-				updatedTransactions[index] = { ...updatedTransactions[index], category: category };
-				return { ...state, transactions: updatedTransactions };
-			}
-			return state;
-		});
-		if (itemUpdated) {
-			triggerAnalysisRun();
-		}
-	},
-	addNotes: (transactionId: string, notes: string) => {
-		let itemUpdated = false;
-		appStateStore.update((state) => {
-			const index = state.transactions.findIndex((t) => t.id === transactionId);
-			if (index !== -1) {
-				itemUpdated = true;
-				const updatedTransactions = [...state.transactions];
-				updatedTransactions[index] = { ...updatedTransactions[index], notes: notes };
-				return { ...state, transactions: updatedTransactions };
-			}
-			return state;
-		});
-	},
 
 	setLoading: (loading: boolean) => {
 		appStateStore.update((state) => ({ ...state, ui: { ...state.ui, loading } }));
-	},
-	selectTransactionForDetails: (transactionId: string | null) => {
-		appStateStore.update((state) => {
-			const selectedTxn = transactionId
-				? state.transactions.find((t) => t.id === transactionId)
-				: null;
-			return {
-				...state,
-				ui: {
-					...state.ui,
-					selectedTransactionId: transactionId,
-					showTransactionDetails: transactionId !== null,
-					currentCategory: selectedTxn ? selectedTxn.category : state.ui.currentCategory
-				}
-			};
-		});
-	},
-	closeTransactionDetails: () => {
-		appStateStore.update((state) => ({
-			...state,
-			ui: { ...state.ui, showTransactionDetails: false, selectedTransactionId: null }
-		}));
-	},
-	setModalCategory: (category: Category) => {
-		appStateStore.update((state) => ({ ...state, ui: { ...state.ui, currentCategory: category } }));
-	},
-
-	setFilterCategory: (category: 'all' | Category) => {
-		appStateStore.update((state) => ({ ...state, filters: { ...state.filters, category } }));
-	},
-	setSearchTerm: (searchTerm: string) => {
-		appStateStore.update((state) => ({ ...state, filters: { ...state.filters, searchTerm } }));
-	},
-	toggleSort: (field: SortField) => {
-		appStateStore.update((state) => {
-			const currentSortField = state.filters.sortField;
-			const currentSortDirection = state.filters.sortDirection;
-			const newSortDirection =
-				currentSortField === field ? (currentSortDirection === 'asc' ? 'desc' : 'asc') : 'asc';
-			return {
-				...state,
-				filters: { ...state.filters, sortField: field, sortDirection: newSortDirection }
-			};
-		});
-	},
-
-	addConversationMessage: (role: 'user' | 'assistant', content: string) => {
-		appStateStore.update((state) => ({
-			...state,
-			conversation: {
-				...state.conversation,
-				messages: [...state.conversation.messages, { role, content, timestamp: Date.now() }]
-			}
-		}));
-	},
-	setConversationStatus: (status: string, progress?: number) => {
-		appStateStore.update((state) => ({
-			...state,
-			conversation: {
-				...state.conversation,
-				status: status,
-				progress:
-					progress !== undefined
-						? Math.max(0, Math.min(100, progress))
-						: state.conversation.progress
-			}
-		}));
-	},
-	setConversationProcessing: (isProcessing: boolean) => {
-		appStateStore.update((state) => ({
-			...state,
-			conversation: {
-				...state.conversation,
-				isProcessing: isProcessing,
-				status: isProcessing ? state.conversation.status : '',
-				progress: isProcessing ? state.conversation.progress : 0
-			}
-		}));
-	},
-	setConversationClarificationNeeded: (needed: boolean, txnIds: string[]) => {
-		appStateStore.update((state) => ({
-			...state,
-			conversation: {
-				...state.conversation,
-				_internal: {
-					...state.conversation._internal,
-					waitingForDirectionClarification: needed,
-					clarificationTxnIds: needed ? txnIds : []
-				}
-			}
-		}));
-	},
-	resetConversation: () => {
-		appStateStore.update((state) => ({
-			...state,
-			conversation: {
-				...initialConversationState,
-				messages: [
-					{
-						role: 'assistant',
-						content: 'Okay, starting fresh. How can I help you?',
-						timestamp: Date.now()
-					}
-				]
-			}
-		}));
 	},
 
 	_setConversationInternalState: (updates: Partial<AppState['conversation']['_internal']>) => {
@@ -539,9 +483,6 @@ export const appStore = {
 	},
 
 	clearCorrectionContext: () => {
-		console.log(
-			'[AppStore] Clearing correction context (lastUserMessageText, lastExtractionBatchId)'
-		);
 		appStateStore.update((state) => ({
 			...state,
 			conversation: {
@@ -572,6 +513,7 @@ export const appStore = {
 			}
 		}));
 	},
+
 	updateBulkChunkStatus: (
 		chunkIndex: number,
 		status: ChunkStatus,
@@ -603,6 +545,7 @@ export const appStore = {
 			return state;
 		});
 	},
+
 	finalizeBulkProcessing: (success: boolean) => {
 		appStateStore.update((state) => {
 			return {
@@ -617,44 +560,8 @@ export const appStore = {
 			...state,
 			analysis: { ...state.analysis, loading, error: loading ? null : state.analysis.error }
 		}));
-	}, // Add this method to the appStore object in src/lib/stores/AppStore.ts
-
-	/**
-	 * Adds a custom model to the available models list and optionally selects it
-	 */
-	addCustomModel: (modelId: string, backend: 'ollama' | 'deepseek', autoSelect: boolean = true) => {
-		if (!modelId || typeof modelId !== 'string' || modelId.trim() === '') {
-			console.warn('[AppStore.addCustomModel] Invalid model ID provided');
-			return;
-		}
-
-		const normalizedModelId = modelId.trim();
-
-		appStateStore.update((state) => {
-			// Check if this model already exists
-			const existingModel = state.ui.availableModels.find((m) => m.id === normalizedModelId);
-			if (existingModel) {
-				// Model already exists, we'll just select it if requested
-				console.log(`[AppStore.addCustomModel] Model ${normalizedModelId} already exists`);
-				return state;
-			}
-
-			// Add the new model
-			console.log(`[AppStore.addCustomModel] Adding new ${backend} model: ${normalizedModelId}`);
-			return {
-				...state,
-				ui: {
-					...state.ui,
-					// Auto-select the new model if requested
-					selectedModel: autoSelect ? normalizedModelId : state.ui.selectedModel,
-					availableModels: [
-						...state.ui.availableModels,
-						{ id: normalizedModelId, name: normalizedModelId, backend }
-					]
-				}
-			};
-		});
 	},
+
 	setAnalysisResults: (results: { summary: any; anomalies: any; predictions: any } | null) => {
 		appStateStore.update((state) => ({
 			...state,
@@ -668,24 +575,21 @@ export const appStore = {
 			}
 		}));
 	},
+
 	setAnalysisError: (error: string | null) => {
 		appStateStore.update((state) => ({
 			...state,
 			analysis: { ...state.analysis, error, loading: false }
 		}));
 	},
-	runFinancialAnalysis: async () => {
-		console.log('[AppStore] Running runFinancialAnalysis...');
+
+	async runFinancialAnalysis() {
 		const state = get(appStateStore);
 		if (state.transactions.length === 0) {
-			console.log('[AppStore] No transactions, clearing analysis.');
 			appStore.setAnalysisResults(null);
 			return;
 		}
-		if (state.analysis.loading) {
-			console.log('[AppStore] Analysis already in progress, skipping.');
-			return;
-		}
+		if (state.analysis.loading) return;
 
 		appStore.setAnalysisLoading(true);
 		try {
@@ -706,14 +610,12 @@ export const appStore = {
 				predictionsPromise
 			]);
 
-			console.log('[AppStore] Analysis calculations complete.');
 			appStore.setAnalysisResults({
 				summary: summaryResult,
 				anomalies: anomaliesResult,
 				predictions: predictionsResult
 			});
 		} catch (error) {
-			console.error('[AppStore] Error during financial analysis:', error);
 			appStore.setAnalysisError(error instanceof Error ? error.message : 'Unknown analysis error');
 		}
 	}

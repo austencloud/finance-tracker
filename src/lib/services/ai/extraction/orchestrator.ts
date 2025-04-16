@@ -1,12 +1,12 @@
 // src/lib/services/ai/extraction/orchestrator.ts
 
-import { deepseekGenerateJson, isLLMAvailable } from '../deepseek-client';
 import { getExtractionPrompt, getOptimizedExtractionPrompt } from '../prompts';
 // Ensure local extractors are imported
 import { enhancedLocalExtraction } from './local-extractors';
 import { parseTransactionsFromLLMResponse } from './llm-parser';
 import type { Transaction } from '$lib/stores/types';
 import { v4 as uuidv4 } from 'uuid'; // <-- Import uuid
+import { isLLMAvailable, llmGenerateJson } from '../llm';
 
 // Cache remains the same
 const extractionCache = new Map<string, { timestamp: number; data: Transaction[] }>();
@@ -63,7 +63,7 @@ export async function extractTransactionsFromText(text: string): Promise<Transac
 					? getOptimizedExtractionPrompt(text, today)
 					: getExtractionPrompt(text, today);
 
-				const rawJsonResponse = await deepseekGenerateJson(extractionPrompt);
+				const rawJsonResponse = await llmGenerateJson([{ role: 'user', content: extractionPrompt }]);
 				if (rawJsonResponse) {
 					// --- Pass batchId to LLM parser ---
 					result = parseTransactionsFromLLMResponse(rawJsonResponse, batchId); // <-- Pass batchId here

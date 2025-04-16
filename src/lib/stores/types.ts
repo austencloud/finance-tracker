@@ -78,6 +78,7 @@ export interface FilterState {
 }
 
 export interface ConversationMessage {
+	id: string; // <-- new, guaranteed unique
 	role: 'user' | 'assistant' | 'system';
 	content: string;
 	timestamp?: number;

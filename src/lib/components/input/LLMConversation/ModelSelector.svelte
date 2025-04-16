@@ -44,7 +44,7 @@
 
 		// Now we need to add a method to appStore to add a custom model
 		// Let's call the addCustomModel method that we'll create in the store
-		appStore.addCustomModel(customModelName, 'ollama');
+		appStore.addCustomModel(customModelName, true);
 
 		// Reset the form
 		showCustomField = false;
@@ -55,17 +55,12 @@
 <div class="model-selector">
 	<label for="model-select">Model:</label>
 	<select id="model-select" on:change={handleModelChange} value={$appStore.ui.selectedModel}>
-		<optgroup label="Ollama (Local)">
+		<optgroup label="Ollama">
 			{#each $appStore.ui.availableModels.filter((m) => m.backend === 'ollama') as model}
 				<option value={model.id}>{model.name}</option>
 			{/each}
 		</optgroup>
-		<optgroup label="DeepSeek (Cloud)">
-			{#each $appStore.ui.availableModels.filter((m) => m.backend === 'deepseek') as model}
-				<option value={model.id}>{model.name}</option>
-			{/each}
-		</optgroup>
-		<option value="custom">Add Custom Ollama Model...</option>
+
 	</select>
 
 	<button

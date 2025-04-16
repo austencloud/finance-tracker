@@ -38,3 +38,7 @@ if (AI_BACKEND_TO_USE === 'ollama' && !OLLAMA_CONFIG.model) {
 		'AI Backend set to Ollama, but OLLAMA_CONFIG.model is not specified in ai-config.ts.'
 	);
 }
+export const OLLAMA_MODELS = {
+	SMALL: 'llama3:latest', // fast, ~8 GB vRAM
+	LARGE: 'deepseek-r1:8b' // needs ~12 GB vRAM on a 3070
+};

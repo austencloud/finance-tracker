@@ -1,9 +1,9 @@
-// src/lib/services/ai/conversation/bulk/llm-chunking.ts
+// src/lib/services/ai/conversation/bulk/llmChunkTransactions.ts
 
 // --- UPDATED IMPORT ---
 // --- END UPDATE ---
-import { fixCommonJsonErrors } from '../../extraction/llm-parser'; // Keep JSON fixing helper
 import { getLLMFallbackResponse, llmGenerateJson } from '../../llm';
+import { extractCleanJson } from '../../parsers/fixJson';
 
 /**
  * Creates a prompt asking the LLM to split raw text into transaction chunks.
@@ -38,7 +38,13 @@ export async function llmChunkTransactions(text: string): Promise<string[]> {
 	try {
 		// --- UPDATED CALL ---
 		// Use llmGenerateJson as the prompt specifically requests JSON output
-		const jsonResponse = await llmGenerateJson(prompt);
+		// Use llmGenerateJson and tell it what the **actual** user text is
+		// (a short slice is fine – we only need enough for the heuristic)
+		const jsonResponse = await llmGenerateJson([{ role: 'user', content: prompt }], {
+			temperature: 0.1,
+			// pass ≤ 120 chars so we don’t ship huge blobs into the picker
+			rawUserText: text.slice(0, 120)
+		});
 		// --- END UPDATE ---
 
 		console.log('[llmChunkTransactions] Received raw response from LLM for chunking.');
@@ -50,9 +56,13 @@ export async function llmChunkTransactions(text: string): Promise<string[]> {
 		} catch (e) {
 			console.warn('[llmChunkTransactions] Initial JSON parse failed, attempting to fix...');
 			try {
-				const fixedJson = fixCommonJsonErrors(jsonResponse);
-				parsedData = JSON.parse(fixedJson);
-				console.log('[llmChunkTransactions] Parsed successfully after fixing JSON.');
+				const fixedJson = extractCleanJson(jsonResponse);
+				if (fixedJson !== null) {
+					parsedData = JSON.parse(fixedJson);
+					console.log('[llmChunkTransactions] Parsed successfully after fixing JSON.');
+				} else {
+					throw new Error('extractCleanJson returned null');
+				}
 			} catch (fixError) {
 				console.error('[llmChunkTransactions] Failed to parse JSON even after fixing:', fixError);
 				console.error('[llmChunkTransactions] Original problematic JSON string:', jsonResponse);

@@ -20,6 +20,28 @@
 	let submitTimeoutId: ReturnType<typeof setTimeout> | null = null;
 	let isSubmitting = false;
 
+	// Starter response templates
+	const starterResponses = [
+		{ label: '💰 Income', text: 'I got paid $1,500 from my job on April 12' },
+		{ label: '💸 Expense', text: 'I spent $42.50 at the grocery store yesterday' },
+		{
+			label: '📝 Multiple',
+			text: 'I paid $800 for rent, $120 for electricity, and received $50 from a friend'
+		},
+		{ label: '❓ Question', text: 'What was my total income so far?' }
+	];
+
+	// Show/hide the starter response panel
+	let showStarterPanel = false;
+
+	// Function to use a starter response
+	function useStarterResponse(text: string) {
+		userInput = text;
+		showStarterPanel = false; // Hide panel after selection
+		// Automatically send the message
+		setTimeout(() => debounceSubmit(), 0);
+	}
+
 	function debounceSubmit() {
 		if (isSubmitting) {
 			console.log('[LLMInputBar] Debounce: Submit already in progress.');
@@ -30,6 +52,11 @@
 		submitTimeoutId = setTimeout(() => {
 			isSubmitting = false;
 		}, 300);
+	}
+
+	// Function to toggle starter panel visibility
+	function toggleStarterPanel() {
+		showStarterPanel = !showStarterPanel;
 	}
 
 	function handleSubmit() {
@@ -44,6 +71,7 @@
 		}
 		sendMessage(currentInput); // Service handles adding/updating appStore.transactions
 		userInput = '';
+		showStarterPanel = false; // Hide panel after submission
 		// isSubmitting will be reset by the timeout or if processing starts
 	}
 
@@ -58,6 +86,7 @@
 		abortAndClear();
 		userInput = '';
 		isSubmitting = false;
+		showStarterPanel = false; // Hide panel after clearing
 		if (submitTimeoutId) clearTimeout(submitTimeoutId);
 	}
 
@@ -73,6 +102,20 @@
 
 <div class="input-container">
 	<form on:submit|preventDefault>
+		{#if showStarterPanel}
+			<div class="starter-panel">
+				{#each starterResponses as response}
+					<button
+						type="button"
+						class="starter-button"
+						on:click={() => useStarterResponse(response.text)}
+						disabled={isProcessingValue || isSubmitting}
+					>
+						{response.label}
+					</button>
+				{/each}
+			</div>
+		{/if}
 		<textarea
 			bind:value={userInput}
 			placeholder="Describe transactions or ask questions..."
@@ -87,6 +130,17 @@
 			disabled={isProcessingValue || isSubmitting}
 		></textarea>
 		<div class="button-container">
+			<!-- Starter response toggle button -->
+			<button
+				type="button"
+				class="starter-toggle-button"
+				title="Show starter templates"
+				on:click={toggleStarterPanel}
+				disabled={isProcessingValue || isSubmitting}
+			>
+				{showStarterPanel ? 'Hide Templates' : 'Templates'}
+			</button>
+
 			<!-- Removed action-buttons div and Summary/Complete buttons -->
 			<button
 				type="button"
@@ -150,7 +204,36 @@
 		flex-wrap: wrap; /* Allow wrapping if needed */
 		gap: 8px;
 	}
-	/* Removed .action-buttons styles */
+	/* Starter panel styles */
+	.starter-panel {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		margin-bottom: 10px;
+		padding: 8px;
+		background: #f0f4f8;
+		border-radius: 10px;
+		border: 1px solid #d0d7de;
+	}
+	.starter-button {
+		background-color: #34be82;
+		color: white;
+		padding: 8px 12px;
+		border-radius: 15px;
+		flex-grow: 1;
+		min-width: 120px;
+		text-align: center;
+	}
+	.starter-button:hover:not(:disabled) {
+		background-color: #2c9e6d;
+	}
+	.starter-toggle-button {
+		background-color: #8e44ad;
+	}
+	.starter-toggle-button:hover:not(:disabled) {
+		background-color: #732d91;
+	}
+	/* Existing button styles */
 	button {
 		padding: 8px 15px;
 		color: white;
@@ -178,21 +261,17 @@
 		display: inline-block;
 		margin-left: 4px;
 	}
-	/* Removed .summary-button styles */
-	/* Removed .complete-button styles */
 	.cancel-button {
 		background-color: #e74c3c;
-		/* margin-right: auto; */ /* Uncomment if Clear should be pushed left */
 	}
 	.cancel-button:hover:not(:disabled) {
 		background-color: #c0392b;
 	}
 
 	.send-button {
-		/* Specific class for the Send button */
 		background-color: #3498db;
-		margin-left: auto; /* Push Send button to the right */
-		min-width: 80px; /* Keep minimum width */
+		margin-left: auto;
+		min-width: 80px;
 	}
 	.send-button:hover:not(:disabled) {
 		background-color: #2980b9;
@@ -200,22 +279,19 @@
 
 	@media (max-width: 600px) {
 		.button-container {
-			/* Keep row layout, but allow stacking if needed via flex-wrap */
-			/* Or force column: */
-			/* flex-direction: column;
-			/* align-items: stretch; */
 			gap: 10px;
 		}
-		/* Adjust button order/width for mobile if needed */
 		.cancel-button {
-			/* Example: Make it take less space if needed */
 			flex-grow: 1;
 		}
 		.send-button {
-			/* Example: Ensure it doesn't shrink too much */
-			/* flex-grow: 2; */
-			margin-left: 0; /* Reset margin if stacking vertically */
-			/* width: 100%; */ /* Make full width if stacking vertically */
+			margin-left: 0;
+		}
+		.starter-panel {
+			flex-direction: column;
+		}
+		.starter-button {
+			width: 100%;
 		}
 	}
 </style>

@@ -1,278 +1,178 @@
-// src/lib/services/ai/llm.ts
+/*  ────────────────────────────────────────────────────────────────────
+    Local‑only LLM helper – picks between llama3:latest (fast) and
+    deepseek‑r1:8b (deeper reasoning) on the fly.
+    -------------------------------------------------------------------
+*/
 
-import { AI_BACKEND_TO_USE, OLLAMA_CONFIG } from '$lib/config/ai-config';
 import { get } from 'svelte/store';
+import { v4 as uuidv4 } from 'uuid';
+
 import { appStore } from '$lib/stores/AppStore';
-
-// Import functions from BOTH clients, renaming for clarity
-// Fix the import to match what's actually exported from deepseek-client
-import {
-	llmChat as deepseekChat, // Fixed: using what's actually exported
-	deepseekGenerateJson,
-	isLLMAvailable as isDeepSeekAvailable,
-	getDeepSeekFallback,
-	DeepSeekApiError
-} from './deepseek-client';
-
 import {
 	ollamaChat,
 	isOllamaAvailable,
 	getOllamaFallbackResponse,
 	OllamaApiError,
-	setOllamaModel // Add this function to ollama-client.ts
+	setOllamaModel
 } from './ollama-client';
 
-// Define common message type expected by both clients
+import {
+	OLLAMA_CONFIG,
+	OLLAMA_MODELS // export should contain { SMALL: 'llama3:latest', LARGE: 'deepseek-r1:8b' }
+} from '$lib/config/ai-config';
+
+/* ------------------------------------------------------------------ */
+/*  Simple helpers                                                    */
+/* ------------------------------------------------------------------ */
+
+/** Very rough heuristic for “simple” extraction */
+function isSimple(text: string): boolean {
+	const lenOK = text.length < 120; // short sentence
+	const linesOK = text.split(/\n/).length === 1; // single‑line
+	const onlyOne$ = (text.match(/\$\s?-?\d+/g) ?? []).length <= 1;
+	return lenOK && linesOK && onlyOne$;
+}
+
+/* --------------------------------------------------------------- */
+/*  pickModel – now honours forceHeavy and classifies better       */
+/* --------------------------------------------------------------- */
+interface ChatOpts {
+	temperature?: number;
+	forceHeavy?: boolean;
+	requestJsonFormat?: boolean;
+	rawUserText?: string; // <─ pass the real user line here
+}
+interface PickOpts {
+	forceHeavy?: boolean;
+}
+export function pickModel(text = '', opts: PickOpts = {}): string {
+	if (opts.forceHeavy) return OLLAMA_MODELS.LARGE; // caller insists
+
+	const shortEnough = text.length < 120;
+	const singleLine = !text.includes('\n');
+	const oneAmountOnly = (text.match(/\$\s?-?\d+/g) ?? []).length <= 1;
+	const hasCommaList = /,.*\d{2,}/.test(text); // e.g. CSV/bulk paste
+
+	return shortEnough && singleLine && oneAmountOnly && !hasCommaList
+		? OLLAMA_MODELS.SMALL // ← llama3:latest
+		: OLLAMA_MODELS.LARGE; // ← deepseek‑r1
+}
+
 type ChatMessage = { role: 'user' | 'assistant' | 'system'; content: string };
-// src/lib/services/ai/llm.ts - Add this improved check function
+type LlmMessage = ChatMessage;
 
-/**
- * Tests if the LLM is actually available by sending a simple test request
- * This is more reliable than just checking if the service is running
- */
+/* ------------------------------------------------------------------ */
+/*  Public: quick health‑check                                        */
+/* ------------------------------------------------------------------ */
+
 export async function testLLMWithSimpleRequest(): Promise<boolean> {
-	const { backend, modelId } = getCurrentBackend();
-	console.log(`[testLLMWithSimpleRequest] Testing ${backend} model: ${modelId}`);
+	const modelId = pickModel('hello'); // arbitrary – just to set any model
+	setOllamaModel(modelId);
+	console.log('[testLLMWithSimpleRequest] Testing Ollama model:', modelId);
+
+	const running = await isOllamaAvailable();
+	if (!running) {
+		console.log('[testLLMWithSimpleRequest] Ollama service not running');
+		return false;
+	}
 
 	try {
-		// Create a very simple test message
-		const testMessages: ChatMessage[] = [
-			{ role: 'user', content: 'Reply with the word "working" if you can see this message.' }
-		];
-
-		// Set a short timeout to avoid long waits
-		const options = {
-			temperature: 0.1,
-			timeout: 5000 // 5 seconds max
-		};
-
-		// Try to get a response
-		if (backend === 'ollama') {
-			// For Ollama, first check if service is running
-			const isRunning = await isOllamaAvailable();
-			if (!isRunning) {
-				console.log('[testLLMWithSimpleRequest] Ollama service not running');
-				return false;
-			}
-
-			// Then try a quick chat request with timeout
-			try {
-				const response = await ollamaChat(testMessages, options, false);
-				const isWorking =
-					typeof response === 'string' &&
-					(response.toLowerCase().includes('working') ||
-						response.toLowerCase().includes('see this message'));
-
-				console.log(
-					`[testLLMWithSimpleRequest] Ollama test ${isWorking ? 'succeeded' : 'failed'} with response: ${typeof response === 'string' ? response.substring(0, 50) : ''}...`
-				);
-				return isWorking;
-			} catch (e) {
-				console.log('[testLLMWithSimpleRequest] Ollama test chat failed:', e);
-				return false;
-			}
-		} else {
-			// For DeepSeek, similar approach
-			const isAvailable = await isDeepSeekAvailable();
-			if (!isAvailable) return false;
-
-			try {
-				const response = await deepseekChat(testMessages, options);
-				return typeof response === 'string' && response.length > 0;
-			} catch (e) {
-				return false;
-			}
-		}
-	} catch (error) {
-		console.error('[testLLMWithSimpleRequest] Error testing LLM:', error);
+		const res = await ollamaChat(
+			[{ role: 'user', content: 'Reply "working" if you hear me.' }],
+			{ temperature: 0.1 },
+			false
+		);
+		const ok = String(res).toLowerCase().includes('working');
+		console.log('[testLLMWithSimpleRequest] Response:', res);
+		return ok;
+	} catch (err) {
+		console.warn('[testLLMWithSimpleRequest] Chat failed:', err);
 		return false;
 	}
 }
+let lastPing = 0;
+let lastPingOK = false;
+export async function isLLMAvailable(maxAgeMs = 60_000): Promise<boolean> {
+	if (Date.now() - lastPing < maxAgeMs) return lastPingOK;
 
-// Update the isLLMAvailable function to use this more reliable test
-export async function isLLMAvailable(): Promise<boolean> {
 	try {
-		return await testLLMWithSimpleRequest();
-	} catch (e) {
-		console.error('[isLLMAvailable] Error:', e);
-		return false;
+		await ollamaChat([{ role: 'user', content: 'ping' }], { temperature: 0 }, false);
+		lastPingOK = true;
+	} catch {
+		lastPingOK = false;
 	}
-}
-/**
- * Gets the current backend to use based on the AppStore selection
- * Falls back to config file if store unavailable
- */
-function getCurrentBackend(): { backend: 'ollama' | 'deepseek'; modelId: string } {
-	try {
-		const state = get(appStore);
-		if (state && state.ui) {
-			const selectedModelId = state.ui.selectedModel;
-			const selectedModel = state.ui.availableModels.find((m) => m.id === selectedModelId);
-
-			if (selectedModel) {
-				return {
-					backend: selectedModel.backend,
-					modelId: selectedModel.id
-				};
-			}
-		}
-	} catch (e) {
-		console.warn('Error getting current model from store, using config:', e);
-	}
-
-	// Fallback to config
-	return {
-		backend: AI_BACKEND_TO_USE as 'ollama' | 'deepseek',
-		modelId: AI_BACKEND_TO_USE === 'ollama' ? OLLAMA_CONFIG.model : 'deepseek-chat'
-	};
+	lastPing = Date.now();
+	return lastPingOK;
 }
 
-/**
- * Sends messages to the configured chat API endpoint.
- * @param messages - Array of messages for the chat context.
- * @param options - Optional parameters like temperature.
- * @param forceBackend - Optional override for backend selection.
- * @returns The complete assistant message content as a string.
- * @throws {DeepSeekApiError | OllamaApiError | Error} - Throws specific errors on failure.
- */
-export async function llmChat(
-	messages: ChatMessage[],
-	options: { temperature?: number } = {},
-	forceBackend?: 'ollama' | 'deepseek'
-): Promise<string> {
-	const { backend, modelId } = forceBackend
-		? {
-				backend: forceBackend,
-				modelId: forceBackend === 'ollama' ? OLLAMA_CONFIG.model : 'deepseek-chat'
-			}
-		: getCurrentBackend();
+/* ------------------------------------------------------------------ */
+/*  Core chat helpers                                                 */
+/* ------------------------------------------------------------------ */
 
-	console.log(`[llmChat] Using ${backend} backend with model: ${modelId}`);
+export async function llmChat(messages: ChatMessage[], opts: ChatOpts = {}): Promise<string> {
+	/* ▸ use the caller‑supplied snippet, falling back to the last user role */
+	const sizingSample =
+		opts.rawUserText ?? [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
 
-	if (backend === 'ollama') {
-		// Set the active model
-		if (modelId !== OLLAMA_CONFIG.model) {
-			setOllamaModel(modelId);
-		}
+	const model = pickModel(sizingSample, opts); // unchanged helper
+	setOllamaModel(model);
 
-		// Ollama client handles standard chat without special format request
-		return ollamaChat(messages, options, false);
-	} else {
-		// DeepSeek client handles standard chat
-		return deepseekChat(messages, options);
-	}
+	const reply = await ollamaChat(
+		messages,
+		{ temperature: opts.temperature ?? 0.7 },
+		opts.requestJsonFormat ?? false
+	);
+
+	return reply ?? '';
 }
 
-/**
- * Sends a prompt to the configured AI expecting a JSON response.
- * @param prompt - The main user prompt.
- * @param systemPrompt - Optional system prompt.
- * @param options - Optional parameters like temperature.
- * @param forceBackend - Optional override for backend selection.
- * @returns The raw JSON string response from the LLM.
- * @throws {DeepSeekApiError | OllamaApiError | Error} - Throws specific errors on failure.
- */
+/** Chat that must return valid JSON */
 export async function llmGenerateJson(
-	prompt: string,
-	systemPrompt?: string,
-	options: { temperature?: number; max_tokens?: number } = {},
-	forceBackend?: 'ollama' | 'deepseek'
+	messages: ChatMessage[],
+	opts: Omit<ChatOpts, 'requestJsonFormat'> = {}
 ): Promise<string> {
-	const { backend, modelId } = forceBackend
-		? {
-				backend: forceBackend,
-				modelId: forceBackend === 'ollama' ? OLLAMA_CONFIG.model : 'deepseek-chat'
-			}
-		: getCurrentBackend();
-
-	console.log(`[llmGenerateJson] Using ${backend} backend with model: ${modelId}`);
-
-	if (backend === 'ollama') {
-		// Set the active model
-		if (modelId !== OLLAMA_CONFIG.model) {
-			setOllamaModel(modelId);
-		}
-
-		// Construct messages array for Ollama chat endpoint and request JSON format
-		const messages: ChatMessage[] = [
-			...(systemPrompt ? [{ role: 'system' as const, content: systemPrompt }] : []),
-			{ role: 'user' as const, content: prompt }
-		];
-		// Ollama client needs explicit request for JSON format
-		return ollamaChat(messages, options, true);
-	} else {
-		// DeepSeek client has a dedicated function that handles JSON mode
-		return deepseekGenerateJson(prompt, systemPrompt, options);
-	}
+	return llmChat(messages, { ...opts, requestJsonFormat: true });
 }
+/* ------------------------------------------------------------------ */
+/*  Compatibility helpers                                             */
+/* ------------------------------------------------------------------ */
 
-/**
- * Choose a backend based on task characteristics
- * - Use local for small/simple tasks
- * - Use cloud for complex reasoning
- */
-export async function chooseBackendForTask(task: {
+/** In this new setup there’s always just one backend (“ollama”). */
+export async function chooseBackendForTask(_: {
 	type: 'chat' | 'json' | 'extraction' | 'analysis';
 	complexity: 'low' | 'medium' | 'high';
 	inputLength: number;
-}): Promise<'ollama' | 'deepseek'> {
-	const { backend } = getCurrentBackend();
-
-	// If we're explicitly set to a backend, honor that choice
-	if (backend === 'deepseek') {
-		return 'deepseek';
-	}
-
-	// Strategy: use local model for simple tasks, fallback to cloud for complex ones
-	// This logic can be customized based on user preferences and experience
-
-	// Simple chats and short inputs go to local model
-	if (task.complexity === 'low' && task.inputLength < 2000) {
-		return 'ollama';
-	}
-
-	// Medium complexity with reasonable length can still use local
-	if (task.complexity === 'medium' && task.inputLength < 1000) {
-		return 'ollama';
-	}
-
-	// JSON generation often works well locally
-	if (task.type === 'json' && task.complexity !== 'high') {
-		return 'ollama';
-	}
-
-	// For complex analyses and large inputs, prefer cloud
-	if (task.complexity === 'high' || task.inputLength > 5000) {
-		try {
-			// Fix: add await to properly check if DeepSeek is available
-			const deepseekPromise = isDeepSeekAvailable();
-			const deepseekAvailable = await deepseekPromise;
-			if (deepseekAvailable) {
-				return 'deepseek';
-			}
-		} catch (e) {
-			console.warn('Error checking DeepSeek availability:', e);
-		}
-	}
-
-	// Default to the selected backend
-	return backend;
+}): Promise<'ollama'> {
+	return 'ollama';
 }
 
-/**
- * Gets a generic fallback error message based on the configured backend.
- * @param error - The error object caught.
- * @returns A user-friendly fallback string.
- */
+/** Unified fallback message */
 export function getLLMFallbackResponse(error?: unknown): string {
-	const { backend } = getCurrentBackend();
+	return getOllamaFallbackResponse(error);
+}
 
-	if (backend === 'ollama') {
-		return getOllamaFallbackResponse(error);
-	} else {
-		return getDeepSeekFallback(error);
+export { OllamaApiError };
+
+/* ------------------------------------------------------------------ */
+/*  Store convenience: expose which model is active                   */
+/* ------------------------------------------------------------------ */
+
+export function getCurrentModelId(): string {
+	try {
+		const sel = get(appStore).ui.selectedModel;
+		return sel || OLLAMA_CONFIG.model;
+	} catch {
+		return OLLAMA_CONFIG.model;
 	}
 }
 
-// Export specific error types for error handling
-export { DeepSeekApiError, OllamaApiError };
+/* ------------------------------------------------------------------ */
+/*  (Optional) helper to build system/user messages more easily       */
+/* ------------------------------------------------------------------ */
+
+export function makeUserMsg(content: string): ChatMessage {
+	return { role: 'user', content };
+}
+export function makeSystemMsg(content: string): ChatMessage {
+	return { role: 'system', content };
+}

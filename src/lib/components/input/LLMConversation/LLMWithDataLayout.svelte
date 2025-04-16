@@ -5,13 +5,11 @@
 	// Import the new data display component we just created
 	import ExtractedDataDisplay from './ExtractedDataDisplay.svelte';
 	// Import the model install helper
-	import ModelInstallHelper from './ModelInstallHelper.svelte';
 </script>
 
 <div class="llm-with-data-container">
 	<div class="left-pane">
 		<LLMConversationLayout />
-		<ModelInstallHelper />
 	</div>
 
 	<div class="right-pane">
