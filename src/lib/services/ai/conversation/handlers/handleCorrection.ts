@@ -4,15 +4,9 @@ import { get } from 'svelte/store';
 import { appStore } from '$lib/stores/AppStore';
 import type { Transaction, Category, AppState } from '$lib/stores/types'; // Import AppState for type hint
 import { resolveAndFormatDate } from '$lib/utils/date';
-import { deepseekGenerateJson, getFallbackResponse } from '../../deepseek-client'; // Use JSON generation
-import { getCorrectionParsingPrompt } from '../../prompts'; // Import the new prompt
-import { parseJsonFromAiResponse } from '$lib/utils/helpers'; // Keep JSON parser
-
-// --- Remove old regex helper functions ---
-// function parseAmountFromText(text: string): number | null { /* ... */ }
-// function parseDescriptionFromText(text: string): string | null { /* ... */ }
-// function parseCategoryFromText(text: string, availableCategories: readonly Category[]): Category | null { /* ... */ }
-// --- End Removal ---
+import { llmGenerateJson, getLLMFallbackResponse } from '../../llm'; // Fixed import names
+import { getCorrectionParsingPrompt } from '../../prompts';
+import { parseJsonFromAiResponse } from '$lib/utils/helpers';
 
 // Define expected structure from LLM response
 interface CorrectionParseResult {
@@ -110,11 +104,13 @@ export async function handleCorrection(
 
 	try {
 		const prompt = getCorrectionParsingPrompt(message, targetTxnForPrompt, availableCategories);
-		const jsonResponse = await deepseekGenerateJson(prompt); // Use JSON mode client
+		// Use llmGenerateJson instead of deepseekGenerateJson
+		const jsonResponse = await llmGenerateJson(prompt);
 		parsedCorrection = parseJsonFromAiResponse<CorrectionParseResult>(jsonResponse);
 	} catch (error) {
 		console.error('[CorrectionHandler] LLM call failed:', error);
-		llmError = getFallbackResponse(error instanceof Error ? error : undefined);
+		// Use getLLMFallbackResponse instead of getLLMFallbackResponse
+		llmError = getLLMFallbackResponse(error instanceof Error ? error : undefined);
 		// Proceed to error handling below
 	}
 

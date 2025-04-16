@@ -1,14 +1,9 @@
-// src/lib/stores/types.ts
-
-// --- Import dependent types from schemas ---
-// Ensure these paths are correct for your project structure
 import type {
 	FinancialSummary,
 	AnomalyDetectionResult,
 	PredictionResult
 } from '$lib/schemas/AnalysisSchema';
 
-// --- Base Types (Transaction, Category, etc. - Assuming no changes needed) ---
 export type Category =
 	| 'PayPal Transfers'
 	| 'Business Income - Austen Cloud Performance'
@@ -22,7 +17,7 @@ export type Category =
 
 export interface Transaction {
 	id: string;
-	batchId: string; // ID for the batch of transactions (for bulk processing)
+	batchId: string;
 	date: string;
 	description: string;
 	type: string;
@@ -39,42 +34,37 @@ export interface ConversationState {
 	userMood: UserMood;
 	_internal: {
 		initialPromptSent: boolean;
-		// Direction Clarification (Existing)
 		waitingForDirectionClarification: boolean;
 		clarificationTxnIds: string[];
-		// Correction Context (Existing)
 		lastUserMessageText: string;
 		lastExtractionBatchId: string | null;
-		// Duplicate Confirmation (Existing)
 		waitingForDuplicateConfirmation?: boolean;
 		pendingDuplicateTransactions?: Transaction[];
-
-		// --- NEW: Correction Clarification State ---
-		/** Flag indicating the app is waiting for the user to specify which transaction to correct. */
 		waitingForCorrectionClarification?: boolean;
-		/** Details of the correction that needs clarification */
+
 		pendingCorrectionDetails?: {
-			originalMessage: string; // The user's original correction message (e.g., "change amount to $12")
-			parsedField: 'amount' | 'date' | 'description' | 'category' | 'type' | 'notes'; // The field parsed from originalMessage
-			parsedValue: any; // The value parsed from originalMessage
-			potentialTxnIds: string[]; // IDs of transactions that could be the target
-            potentialTxnDescriptions: string[]; // Descriptions to help user choose
+			originalMessage: string;
+			parsedField: 'amount' | 'date' | 'description' | 'category' | 'type' | 'notes';
+			parsedValue: any;
+			potentialTxnIds: string[];
+			potentialTxnDescriptions: string[];
 		} | null;
-		// --- END NEW ---
+
+		llmAvailable: boolean;
 	};
 }
 export interface CategoryTotals {
 	[key: string]: number;
 }
 
-// --- State Slice Interfaces ---
-
 export interface UIState {
-	loading: boolean; // General loading (e.g., for file import)
+	loading: boolean;
 	showSuccessMessage: boolean;
 	selectedTransactionId: string | null;
 	showTransactionDetails: boolean;
-	currentCategory: Category; // For modal interaction
+	currentCategory: Category;
+	selectedModel: string;
+	availableModels: { id: string; name: string; backend: 'ollama' | 'deepseek' }[];
 }
 
 export type SortField = 'date' | 'amount' | 'description' | 'category';
@@ -93,38 +83,6 @@ export interface ConversationMessage {
 	timestamp?: number;
 }
 export type UserMood = 'neutral' | 'frustrated' | 'chatty' | 'unknown';
-export interface ConversationState {
-	messages: ConversationMessage[];
-	status: string;
-	isProcessing: boolean;
-	progress: number;
-	userMood: UserMood;
-	_internal: {
-		initialPromptSent: boolean;
-		// Direction Clarification (Existing)
-		waitingForDirectionClarification: boolean;
-		clarificationTxnIds: string[];
-		// Correction Context (Existing)
-		lastUserMessageText: string;
-		lastExtractionBatchId: string | null;
-		// Duplicate Confirmation (Existing)
-		waitingForDuplicateConfirmation?: boolean;
-		pendingDuplicateTransactions?: Transaction[];
-
-		// --- NEW: Correction Clarification State ---
-		/** Flag indicating the app is waiting for the user to specify which transaction to correct. */
-		waitingForCorrectionClarification?: boolean;
-		/** Details of the correction that needs clarification */
-		pendingCorrectionDetails?: {
-			originalMessage: string; // The user's original correction message (e.g., "change amount to $12")
-			parsedField: 'amount' | 'date' | 'description' | 'category' | 'type' | 'notes'; // The field parsed from originalMessage
-			parsedValue: any; // The value parsed from originalMessage
-			potentialTxnIds: string[]; // IDs of transactions that could be the target
-            potentialTxnDescriptions: string[]; // Descriptions to help user choose
-		} | null;
-		// --- END NEW ---
-	};
-}
 
 export type ChunkStatus = 'pending' | 'processing' | 'success' | 'error';
 export interface ProcessingChunk {
@@ -132,31 +90,28 @@ export interface ProcessingChunk {
 	text: string;
 	status: ChunkStatus;
 	message: string;
-	transactionCount: number; // How many txns found *in this chunk*
+	transactionCount: number;
 }
 export interface BulkProcessingState {
 	processingChunks: ProcessingChunk[];
 	processingProgress: number;
-	isBulkProcessing: boolean; // Controls the UI visibility
-	// REMOVED: tempExtractedTransactions: Transaction[];
+	isBulkProcessing: boolean;
 }
 
-// --- NEW: Analysis State Slice ---
 export interface AnalysisState {
 	summary: FinancialSummary | null;
 	anomalies: AnomalyDetectionResult | null;
 	predictions: PredictionResult | null;
-	loading: boolean; // Specific loading state for analysis calculations
-	error: string | null; // Any error during analysis
+	loading: boolean;
+	error: string | null;
 }
 
-// --- Updated Master AppState ---
 export interface AppState {
-	transactions: Transaction[]; // Single source of truth for transactions
+	transactions: Transaction[];
 	categories: Category[];
 	ui: UIState;
 	filters: FilterState;
 	conversation: ConversationState;
 	bulkProcessing: BulkProcessingState;
-	analysis: AnalysisState; // Added analysis slice
+	analysis: AnalysisState;
 }

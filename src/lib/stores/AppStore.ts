@@ -6,7 +6,7 @@ import {
 	detectAnomalies,
 	predictFutureTransactions
 } from '$lib/services/analytics';
-import { isLLMAvailable } from '$lib/services/ai/deepseek-client';
+import { isLLMAvailable } from '$lib/services/ai/llm';
 
 import type {
 	AppState,
@@ -24,6 +24,7 @@ import type {
 	UserMood,
 	AnalysisState
 } from './types';
+import { AI_BACKEND_TO_USE, OLLAMA_CONFIG } from '$lib/config/ai-config';
 
 const initialCategories: Category[] = [
 	'PayPal Transfers',
@@ -42,7 +43,7 @@ const initialConversationState: ConversationState = {
 		{
 			role: 'assistant',
 			content:
-				"Hello! I'm your AI Transaction Assistant. Paste your transaction data or describe your spending and I’ll help you organize it.",
+				"Hello! I'm your AI Transaction Assistant. Paste your transaction data or describe your spending and I'll help you organize it.",
 			timestamp: Date.now()
 		}
 	],
@@ -61,8 +62,9 @@ const initialConversationState: ConversationState = {
 		pendingDuplicateTransactions: [],
 		// --- Initialize NEW states ---
 		waitingForCorrectionClarification: false,
-		pendingCorrectionDetails: null
-		// --- END Initialize ---
+		pendingCorrectionDetails: null,
+		// --- Add LLM availability tracking ---
+		llmAvailable: false
 	}
 };
 
@@ -88,7 +90,12 @@ const initialState: AppState = {
 		showSuccessMessage: false,
 		selectedTransactionId: null,
 		showTransactionDetails: false,
-		currentCategory: initialCategories.includes('Expenses') ? 'Expenses' : initialCategories[0]
+		currentCategory: initialCategories.includes('Expenses') ? 'Expenses' : initialCategories[0],
+		selectedModel: AI_BACKEND_TO_USE === 'ollama' ? OLLAMA_CONFIG.model : 'deepseek-chat',
+		availableModels: [
+			{ id: 'deepseek-chat', name: 'DeepSeek Chat', backend: 'deepseek' },
+			{ id: OLLAMA_CONFIG.model, name: OLLAMA_CONFIG.model, backend: 'ollama' }
+		]
 	},
 	filters: {
 		category: 'all',
@@ -180,6 +187,20 @@ export const appStore = {
 			};
 		});
 	},
+	setSelectedModel: (modelId: string) => {
+		appStateStore.update((state) => {
+			const model = state.ui.availableModels.find((m) => m.id === modelId);
+			if (!model) return state;
+
+			return {
+				...state,
+				ui: {
+					...state.ui,
+					selectedModel: modelId
+				}
+			};
+		});
+	},
 	getSortedFilteredTransactions: (): Transaction[] => {
 		const state = get(appStateStore);
 		const { transactions, filters } = state;
@@ -251,7 +272,19 @@ export const appStore = {
 		});
 		return totals;
 	},
-
+	setLLMAvailability: (available: boolean) => {
+		console.log(`[AppStore] Setting LLM availability to: ${available}`);
+		appStateStore.update((state) => ({
+			...state,
+			conversation: {
+				...state.conversation,
+				_internal: {
+					...state.conversation._internal,
+					llmAvailable: available
+				}
+			}
+		}));
+	},
 	addTransactions: (newTransactions: Transaction[]) => {
 		if (!Array.isArray(newTransactions) || newTransactions.length === 0) {
 			console.log('[AppStore.addTransactions] Received empty or invalid input. Skipping.');
@@ -584,6 +617,43 @@ export const appStore = {
 			...state,
 			analysis: { ...state.analysis, loading, error: loading ? null : state.analysis.error }
 		}));
+	}, // Add this method to the appStore object in src/lib/stores/AppStore.ts
+
+	/**
+	 * Adds a custom model to the available models list and optionally selects it
+	 */
+	addCustomModel: (modelId: string, backend: 'ollama' | 'deepseek', autoSelect: boolean = true) => {
+		if (!modelId || typeof modelId !== 'string' || modelId.trim() === '') {
+			console.warn('[AppStore.addCustomModel] Invalid model ID provided');
+			return;
+		}
+
+		const normalizedModelId = modelId.trim();
+
+		appStateStore.update((state) => {
+			// Check if this model already exists
+			const existingModel = state.ui.availableModels.find((m) => m.id === normalizedModelId);
+			if (existingModel) {
+				// Model already exists, we'll just select it if requested
+				console.log(`[AppStore.addCustomModel] Model ${normalizedModelId} already exists`);
+				return state;
+			}
+
+			// Add the new model
+			console.log(`[AppStore.addCustomModel] Adding new ${backend} model: ${normalizedModelId}`);
+			return {
+				...state,
+				ui: {
+					...state.ui,
+					// Auto-select the new model if requested
+					selectedModel: autoSelect ? normalizedModelId : state.ui.selectedModel,
+					availableModels: [
+						...state.ui.availableModels,
+						{ id: normalizedModelId, name: normalizedModelId, backend }
+					]
+				}
+			};
+		});
 	},
 	setAnalysisResults: (results: { summary: any; anomalies: any; predictions: any } | null) => {
 		appStateStore.update((state) => ({

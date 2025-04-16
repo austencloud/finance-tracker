@@ -12,9 +12,10 @@ import {
 	// parseJsonFromAiResponse, // Not directly used here, parser does it
 	textLooksLikeTransaction
 } from '$lib/utils/helpers';
-import { deepseekChat, getFallbackResponse } from '../../deepseek-client';
+import { llmChat } from '../../deepseek-client';
 import { getExtractionPrompt, getSystemPrompt } from '../../prompts';
 import { parseTransactionsFromLLMResponse } from '../../extraction/llm-parser';
+import { getLLMFallbackResponse } from '../../llm';
 
 // --- Helper Functions (Normalization, Key Creation - remain the same) ---
 function normalizeDescription(desc: string | undefined | null): string {
@@ -62,14 +63,14 @@ export async function handleExtraction(
 			{ role: 'user', content: extractionPrompt }
 		];
 
-		const aiResponse = await deepseekChat(messages, { temperature: 0.2 });
+		const aiResponse = await llmChat(messages, { temperature: 0.2 });
 
 		// --- Pass the generated batchId to the parser ---
 		const parsedTransactions = parseTransactionsFromLLMResponse(aiResponse, batchId);
 
 		if (!Array.isArray(parsedTransactions)) {
 			console.warn('[ExtractionHandler] Failed to parse valid transaction array from AI response.');
-			const fallback = getFallbackResponse(new Error('AI response parsing failed'));
+			const fallback = getLLMFallbackResponse(new Error('AI response parsing failed'));
 			appStore.setConversationStatus('Error parsing response');
 			// --- Clear context on parse failure ---
 			appStore.clearCorrectionContext();
@@ -151,7 +152,7 @@ export async function handleExtraction(
 		}
 	} catch (error) {
 		console.error('[ExtractionHandler] Error during extraction:', error);
-		const errorMsg = getFallbackResponse(error instanceof Error ? error : undefined);
+		const errorMsg = getLLMFallbackResponse(error instanceof Error ? error : undefined);
 		appStore.setConversationStatus('Error during extraction');
 		// --- Clear context on error ---
 		appStore.clearCorrectionContext();

@@ -1,16 +1,12 @@
+<!-- src/lib/components/input/LLMConversation/LLMHeader.svelte -->
 <script lang="ts">
-	// --- REMOVE old derived store import ---
-	// import {
-	//     conversationProgress,
-	//     conversationStatus
-	// } from '$lib/services/ai/conversation/conversationDerivedStores';
-
-	// --- Import central appStore ---
 	import { appStore } from '$lib/stores/AppStore';
+	import ModelSelector from './ModelSelector.svelte';
 </script>
 
 <div class="conversation-header-embedded">
 	<h4>AI Transaction Assistant</h4>
+	<ModelSelector />
 </div>
 
 {#if $appStore.conversation.progress > 0}

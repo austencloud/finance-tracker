@@ -9,7 +9,7 @@ import { get } from 'svelte/store';
 // import { conversationMessages } from '../conversationDerivedStores';
 
 // --- Keep other necessary imports ---
-import { deepseekChat, getFallbackResponse } from '../../deepseek-client';
+import { llmChat, getLLMFallbackResponse } from '../../llm';
 import { getSystemPrompt } from '../../prompts';
 import type { ConversationMessage } from '$lib/stores/types'; // Import type if needed
 
@@ -33,10 +33,10 @@ export async function handleNormalResponse(
 			console.warn('[NormalResponseHandler] Conversation history is not an array.');
 			// Fallback gracefully
 			const simpleMessages = [
-				{ role: 'system', content: getSystemPrompt(today) },
-				{ role: 'user', content: message } // Send only system and user prompt
+				{ role: 'system' as const, content: getSystemPrompt(today) },
+				{ role: 'user' as const, content: message } // Send only system and user prompt
 			];
-			const aiResponse = await deepseekChat(simpleMessages, { temperature: 0.7 });
+			const aiResponse = await llmChat(simpleMessages, { temperature: 0.7 });
 			if (!aiResponse?.trim()) {
 				throw new Error('AI returned an empty fallback response.');
 			}
@@ -48,18 +48,16 @@ export async function handleNormalResponse(
 		// Get the latest user message (which `sendMessage` added before calling handlers)
 		const currentMessage = history[history.length - 1];
 		const messagesToAi = [
-			{ role: 'system', content: getSystemPrompt(today) },
+			{ role: 'system' as const, content: getSystemPrompt(today) },
 			// Include recent history (excluding the current user message which is last)
 			...history.slice(-7, -1).map((msg: ConversationMessage) => ({
-				// Get up to 6 previous messages
-				role: msg.role,
-				content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content) // Handle potential non-string content defensively
+				role: msg.role as 'user' | 'assistant' | 'system',
+				content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)
 			})),
-			// Add the current user message back
-			{ role: currentMessage.role, content: currentMessage.content }
+			{ role: currentMessage.role as 'user' | 'assistant' | 'system', content: currentMessage.content }
 		];
 
-		const aiResponse = await deepseekChat(messagesToAi, { temperature: 0.7 });
+		const aiResponse = await llmChat(messagesToAi, { temperature: 0.7 });
 
 		if (!aiResponse?.trim()) {
 			throw new Error('AI returned an empty response.');
@@ -71,7 +69,7 @@ export async function handleNormalResponse(
 		return { handled: true, response: aiResponse };
 	} catch (error) {
 		console.error('[NormalResponseHandler] Error during AI chat:', error);
-		const errorMsg = getFallbackResponse(error instanceof Error ? error : undefined);
+		const errorMsg = getLLMFallbackResponse(error instanceof Error ? error : undefined);
 		// --- Update status via appStore action ---
 		appStore.setConversationStatus('Error generating response'); // Set error status
 		return { handled: true, response: errorMsg }; // Still handled (by error), return error message

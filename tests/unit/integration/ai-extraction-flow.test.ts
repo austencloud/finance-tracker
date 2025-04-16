@@ -34,9 +34,9 @@ vi.mock('$lib/services/ai/deepseek-client', () => {
 	const mockJsonResponseStringData = JSON.stringify({ transactions: mockTransactionsData });
 	// --- Return mocked functions ---
 	return {
-		deepseekChat: vi.fn().mockResolvedValue(mockJsonResponseStringData),
+		llmChat: vi.fn().mockResolvedValue(mockJsonResponseStringData),
 		deepseekGenerateJson: vi.fn().mockResolvedValue(mockJsonResponseStringData), // Mock this too
-		getFallbackResponse: vi.fn((err) => `Fallback error: ${err?.message || 'Unknown'}`),
+		getLLMFallbackResponse: vi.fn((err) => `Fallback error: ${err?.message || 'Unknown'}`),
 		isLLMAvailable: vi.fn().mockResolvedValue(true)
 	};
 });

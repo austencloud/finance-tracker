@@ -12,7 +12,7 @@
 		predictFutureTransactions
 	} from '$lib/services/analytics';
 	// Corrected path for ai service
-	import { isLLMAvailable } from '$lib/services/ai/deepseek-client'; // Assuming this is the correct path
+	import { isLLMAvailable } from '$lib/services/ai/llm'; // Assuming this is the correct path
 
 	// Local component state
 	let summary: any = null;
@@ -132,9 +132,9 @@
 							<p>{summary.analysis}</p>
 						</div>
 					{:else if !llmAvailable} -->
-						<div class="llm-notice">
-							<p>Enable the AI features to get personalized financial analysis.</p>
-						</div>
+					<div class="llm-notice">
+						<p>Enable the AI features to get personalized financial analysis.</p>
+					</div>
 					<!-- {/if} -->
 				</div>
 			{/if}

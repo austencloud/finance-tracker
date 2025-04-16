@@ -1,7 +1,7 @@
 import { get } from 'svelte/store';
 import { appStore } from '$lib/stores/AppStore';
 
-import { deepseekChat, getFallbackResponse } from '../../deepseek-client';
+import { getLLMFallbackResponse, llmChat } from '../../llm';
 import { getSystemPrompt } from '../../prompts';
 
 import { parseTransactionsFromLLMResponse } from '../../extraction/llm-parser';
@@ -67,11 +67,11 @@ export async function handleCountCorrection(
 
 		const today = new Date().toISOString().split('T')[0];
 		const messages = [
-			{ role: 'system', content: getSystemPrompt(today) },
-			{ role: 'user', content: reExtractionPrompt }
+			{ role: 'system' as const, content: getSystemPrompt(today) },
+			{ role: 'user' as const, content: reExtractionPrompt }
 		];
 
-		const aiResponse = await deepseekChat(messages, { temperature: 0.2 });
+		const aiResponse = await llmChat(messages, { temperature: 0.2 });
 
 		const newCorrectionBatchId = uuidv4();
 
@@ -114,7 +114,7 @@ export async function handleCountCorrection(
 	} catch (error) {
 		console.error('[CountCorrectionHandler] Error during re-extraction:', error);
 		appStore.setConversationStatus('Error during correction');
-		const errorMsg = getFallbackResponse(error instanceof Error ? error : undefined);
+		const errorMsg = getLLMFallbackResponse(error instanceof Error ? error : undefined);
 		appStore._setConversationInternalState({
 			lastUserMessageText: '',
 			lastExtractionBatchId: null

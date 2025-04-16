@@ -1,3 +1,4 @@
+<!-- src/App.svelte (partial) -->
 <script lang="ts">
 	import LLMWithDataLayout from '$lib/components/input/LLMConversation/LLMWithDataLayout.svelte';
 	// Import the Analysis component
@@ -12,8 +13,34 @@
 	import { generateHTMLReport } from '$lib/services/exporter';
 	import { initialize } from '$lib/services/ai/conversation/conversationService';
 
-	onMount(() => {
+	// Import model discovery
+	import { initializeModelDiscovery } from '$lib/services/ai/model-discovery';
+	import { isLLMAvailable } from '$lib/services/ai/llm';
+
+	onMount(async () => {
 		initialize(); // Initialize conversation service
+
+		// Try to discover available models
+		try {
+			await initializeModelDiscovery();
+		} catch (e) {
+			console.warn('Model discovery failed:', e);
+		}
+
+		// Check if any LLM is available
+		try {
+			const llmAvailable = await isLLMAvailable();
+			// Update the store with LLM availability
+			appStore.setLLMAvailability(llmAvailable);
+
+			if (!llmAvailable) {
+				console.warn('No LLM available. App will have limited functionality.');
+			}
+		} catch (e) {
+			console.warn('Error checking LLM availability:', e);
+			appStore.setLLMAvailability(false);
+		}
+
 		// Trigger initial analysis if needed
 		if (get(appStore).transactions.length > 0) {
 			appStore.runFinancialAnalysis();
@@ -37,7 +64,6 @@
 	{/if}
 
 	<LLMWithDataLayout />
-
 	<FinancialAnalysis />
 
 	<div class="global-actions">
@@ -84,12 +110,12 @@
 		display: flex;
 		gap: 10px;
 		flex-wrap: wrap;
-		align-items: center; /* Center items vertically */
+		align-items: center;
 	}
 
 	.global-actions h2 {
 		margin: 0;
-		margin-right: 15px; /* Space between title and buttons */
+		margin-right: 15px;
 		font-size: 1.1em;
 		color: #34495e;
 	}
@@ -109,7 +135,6 @@
 		cursor: not-allowed;
 	}
 
-	/* Kept primary, removed others as buttons were removed */
 	.primary-action {
 		background-color: #2ecc71;
 	}

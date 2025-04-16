@@ -31,7 +31,9 @@ vi.mock('$lib/stores/AppStore', () => {
 				showSuccessMessage: false,
 				selectedTransactionId: null,
 				showTransactionDetails: false,
-				currentCategory: 'Expenses'
+				currentCategory: 'Expenses',
+				selectedModel: '',
+				availableModels: []
 			},
 			filters: { category: 'all', searchTerm: '', sortField: 'date', sortDirection: 'desc' },
 			conversation: {
@@ -128,9 +130,9 @@ const mockLLMTransactionData = [
 ];
 const mockLLMJsonResponseString = JSON.stringify({ transactions: mockLLMTransactionData });
 vi.mock('$lib/services/ai/deepseek-client', () => ({
-	deepseekChat: vi.fn().mockResolvedValue(mockLLMJsonResponseString),
+	llmChat: vi.fn().mockResolvedValue(mockLLMJsonResponseString),
 	deepseekGenerateJson: vi.fn().mockResolvedValue(mockLLMJsonResponseString),
-	getFallbackResponse: vi.fn((err) => `Fallback error: ${err?.message || 'Unknown'}`),
+	getLLMFallbackResponse: vi.fn((err) => `Fallback error: ${err?.message || 'Unknown'}`),
 	isLLMAvailable: vi.fn().mockResolvedValue(true)
 }));
 
@@ -186,7 +188,7 @@ describe('Conversation Handlers', () => {
 			const { parseTransactionsFromLLMResponse } = await import(
 				'$lib/services/ai/extraction/llm-parser'
 			);
-			const { deepseekChat } = await import('$lib/services/ai/deepseek-client');
+			const { llmChat } = await import('$lib/services/ai/deepseek-client');
 
 			const specificMockParsedTransactions: Transaction[] = [
 				{
@@ -206,7 +208,7 @@ describe('Conversation Handlers', () => {
 			const result = await handleExtraction(inputText, null);
 
 			expect(result.handled).toBe(true);
-			expect(deepseekChat).toHaveBeenCalledOnce();
+			expect(llmChat).toHaveBeenCalledOnce();
 			expect(parseTransactionsFromLLMResponse).toHaveBeenCalledOnce();
 			expect(parseTransactionsFromLLMResponse).toHaveBeenCalledWith(
 				mockLLMJsonResponseString,
