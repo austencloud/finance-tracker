@@ -152,7 +152,10 @@ export async function deepseekGenerateJson(
 	// Construct messages, ensuring JSON is requested
 	const messages = [
 		...(systemPrompt ? [{ role: 'system', content: systemPrompt }] : []),
-		{ role: 'user', content: `${prompt}\n\nOutput ONLY the raw JSON object as specified.` } // Explicit instruction
+		{
+			role: 'user',
+			content: `${prompt}\n\nCRITICAL INSTRUCTION: Your response MUST BEGIN IMMEDIATELY with the opening brace '{' of the JSON object. DO NOT include ANY explanatory text, thinking, preamble, or markdown code blocks. Just the raw JSON. If you add ANY text before the JSON object, it will cause parsing errors.`
+		} // Explicit instruction
 	];
 
 	await throttleApiCall();

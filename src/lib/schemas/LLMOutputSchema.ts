@@ -1,6 +1,6 @@
 // src/lib/schemas/LLMOutputSchema.ts
 import { z } from 'zod';
-import { TransactionSchema } from './TransactionSchema'; // Re-use parts if applicable
+// REMOVED: import { TransactionSchema } from './TransactionSchema'; // Not needed here
 
 // Schema for the raw transaction object expected directly from the LLM extraction prompt
 export const LLMTransactionExtractionSchema = z.object({
@@ -11,10 +11,14 @@ export const LLMTransactionExtractionSchema = z.object({
 	amount: z
 		.number()
 		.positive()
-		.describe('Positive numeric amount, use 0 if unknown'),
+		.describe('Positive numeric amount, use 0 if unknown')
+		.or(z.literal(0)), // Allow 0 too
+	// --- MODIFIED: Accept string, transform to uppercase, then validate enum ---
 	direction: z
-		.enum(['IN', 'OUT', 'unknown'])
-		.describe('Direction: IN, OUT, or "unknown" if ambiguous')
+		.string() // Accept any string initially
+		.transform((val) => val.toUpperCase()) // Transform to uppercase
+		.pipe(z.enum(['IN', 'OUT', 'unknown'])) // THEN validate against uppercase enum
+		.describe("Direction: IN, OUT, or 'unknown' if ambiguous")
 });
 
 // Schema for the overall LLM response containing an array of transactions
@@ -22,39 +26,32 @@ export const LLMTransactionResponseSchema = z.object({
 	transactions: z.array(LLMTransactionExtractionSchema).describe('Array of extracted transactions')
 });
 
-// Schema for LLM Chunking response
+// ... rest of the schemas (Chunking, Category Suggestion, Analysis, etc.) ...
 export const LLMChunkingResponseSchema = z.object({
-    transaction_chunks: z.array(z.string()).describe("Array of text chunks, each representing one transaction block.")
+	transaction_chunks: z
+		.array(z.string())
+		.describe('Array of text chunks, each representing one transaction block.')
 });
-
-// Schema for Category Suggestion response (assuming simple string)
-export const LLMCategorySuggestionSchema = z.string(); // Or refine if more structure is needed
-
-// Schema for AI Analysis response (assuming string)
+export const LLMCategorySuggestionSchema = z.string();
 export const LLMAnalysisResponseSchema = z.object({
-    analysis: z.string().describe("Textual financial analysis")
+	analysis: z.string().describe('Textual financial analysis')
 });
-
-// Schema for Anomaly Detection response
 export const LLMAnomalySchema = z.object({
-    index: z.number().int().nonnegative(),
-    reason: z.string(),
-    risk: z.enum(['low', 'medium', 'high'])
+	index: z.number().int().nonnegative(),
+	reason: z.string(),
+	risk: z.enum(['low', 'medium', 'high'])
 });
 export const LLMAnomalyResponseSchema = z.object({
-    anomalies: z.array(LLMAnomalySchema)
+	anomalies: z.array(LLMAnomalySchema)
 });
-
-// Schema for Prediction response
 export const LLMPredictionResponseSchema = z.object({
-    predictedIncome: z.number(),
-    predictedExpenses: z.number(),
-    reliability: z.enum(['none', 'low', 'medium', 'high']),
-    message: z.string()
+	predictedIncome: z.number(),
+	predictedExpenses: z.number(),
+	reliability: z.enum(['none', 'low', 'medium', 'high']),
+	message: z.string()
 });
 
 // --- Inferred Types ---
 export type LLMTransactionExtraction = z.infer<typeof LLMTransactionExtractionSchema>;
 export type LLMTransactionResponse = z.infer<typeof LLMTransactionResponseSchema>;
 export type LLMChunkingResponse = z.infer<typeof LLMChunkingResponseSchema>;
-// ... other inferred types if needed

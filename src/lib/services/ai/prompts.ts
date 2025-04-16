@@ -97,7 +97,7 @@ export function getExtractionPrompt(text: string, todayDateString: string): stri
      }
 
 
-    Output ONLY the raw JSON object containing the 'transactions' array. Do not include explanations, notes, or apologies. If no plausible transaction is found, return: { "transactions": }`;
+    CRITICAL INSTRUCTION: Your response MUST BEGIN IMMEDIATELY with the opening brace '{' of the JSON object. DO NOT include ANY explanatory text, thinking, preamble, or markdown code blocks. Just the raw JSON. If you add ANY text before the JSON object, it will cause parsing errors.`;
 }
 
 /**

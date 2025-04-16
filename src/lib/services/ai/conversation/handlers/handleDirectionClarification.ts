@@ -1,32 +1,36 @@
-// src/lib/services/ai/conversation/handlers/direction-clarification-handler.ts
-import { extractedTransactions } from '../conversationDerivedStores'; // Import main store and extractedTransactions
+// src/lib/services/ai/conversation/handlers/handleDirectionclarification.ts
+// --- REMOVE old store imports ---
+// import { extractedTransactions } from '../conversationDerivedStores';
+// import { conversationStore } from '../conversationStore';
+
+// --- Import central store and helpers ---
+import { appStore } from '$lib/stores/AppStore'; // Import central store
 import { get } from 'svelte/store';
-import { categorizeTransaction } from '$lib/services/categorizer';
-import { conversationStore } from '../conversationStore';
 import type { Transaction } from '$lib/stores/types';
 import { applyExplicitDirection } from '$lib/utils/helpers';
-import { appStore } from '$lib/stores';
+// Removed categorizeTransaction import as applyExplicitDirection handles category adjustments internally
 
 // --- Main Handler Function ---
 
 /**
  * Handles user responses when the AI has asked for clarification on transaction direction (in/out).
+ * Reads clarification state from appStore and updates transactions in appStore.
  *
  * @param message The user's input message.
+ * @param explicitDirectionIntent Optional direction hint (ignored by this handler).
  * @returns An object indicating if the message was handled and an optional response.
- * This handler will typically update the stored transactions based on the clarification
- * and provide a confirmation message.
  */
 export async function handleDirectionClarification(
 	message: string,
 	explicitDirectionIntent: 'in' | 'out' | null // Keep signature consistent
 ): Promise<{ handled: boolean; response?: string }> {
-	const internalState = conversationStore._getInternalState();
-	const needsClarification = internalState.waitingForDirectionClarification;
-	const txnIdsForClarification = internalState.clarificationTxnIds;
+	// --- Read internal state from appStore ---
+	const conversationInternalState = get(appStore).conversation._internal;
+	const needsClarification = conversationInternalState.waitingForDirectionClarification;
+	const txnIdsForClarification = conversationInternalState.clarificationTxnIds || []; // Default to empty array
 
 	if (!needsClarification) {
-		return { handled: false };
+		return { handled: false }; // Not waiting for this type of input
 	}
 
 	const lowerMessage = message.toLowerCase().trim();
@@ -44,18 +48,26 @@ export async function handleDirectionClarification(
 	) {
 		clarifiedDirection = 'out';
 	} else if (lowerMessage.includes('neither') || lowerMessage.includes('cancel')) {
-		conversationStore._setClarificationNeeded(false, []);
+		// --- Use appStore action to clear clarification state ---
+		appStore.setConversationClarificationNeeded(false, []);
+		// Optionally clear context as well
+		appStore._setConversationInternalState({
+			lastUserMessageText: '',
+			lastExtractionBatchId: null
+		});
 		return {
 			handled: true,
 			response: "Okay, I've cancelled the clarification request. What's next?"
 		};
 	} else {
 		// Ask again if unclear
-		conversationStore._addMessage(
+		// --- Use appStore action to add message ---
+		appStore.addConversationMessage(
 			'assistant',
 			"Sorry, I didn't quite catch that. Are these generally 'in' (income) or 'out' (expenses)?"
 		);
-		return { handled: true }; // Handled by re-prompting
+		// We handled it by re-prompting, but don't need to return a response string
+		return { handled: true };
 	}
 
 	// --- Apply the clarified direction using appStore ---
@@ -67,24 +79,27 @@ export async function handleDirectionClarification(
 	const allCurrentTransactions = get(appStore).transactions;
 
 	// Find the specific transactions needing update based on stored IDs
+	// Ensure IDs are compared correctly (both should be strings)
 	const transactionsToUpdate = allCurrentTransactions.filter(
 		(t: Transaction) => t.id && txnIdsForClarification.includes(t.id)
 	);
 
 	if (transactionsToUpdate.length > 0) {
 		// Use the PURE helper function to get the modified transaction data
-		// Note: This returns NEW objects, doesn't modify originals
 		const updatedTransactionData = applyExplicitDirection(transactionsToUpdate, clarifiedDirection);
 
-		// *** Update transactions one by one in the appStore ***
+		// *** Update transactions one by one in the appStore (Already Correct) ***
 		updatedTransactionData.forEach((updatedTxn) => {
 			appStore.updateTransaction(updatedTxn); // Use the store action
 		});
 
-		// Clear the clarification state in conversationStore
-		conversationStore._setClarificationNeeded(false, []);
-		// Clear context that led to clarification
-		conversationStore._clearLastInputContext();
+		// --- Use appStore action to clear clarification state ---
+		appStore.setConversationClarificationNeeded(false, []);
+		// --- Use appStore action to clear context ---
+		appStore._setConversationInternalState({
+			lastUserMessageText: '',
+			lastExtractionBatchId: null
+		});
 
 		const response = `Got it! I've updated ${updatedTransactionData.length} transaction(s) as ${clarifiedDirection === 'in' ? 'income/deposits' : 'expenses/payments'}.`;
 		return { handled: true, response: response };
@@ -92,8 +107,13 @@ export async function handleDirectionClarification(
 		console.warn(
 			'[DirectionClarificationHandler] Clarification received, but no transactions found matching the stored IDs in appStore.'
 		);
-		conversationStore._setClarificationNeeded(false, []);
-		conversationStore._clearLastInputContext();
+		// --- Use appStore action to clear clarification state ---
+		appStore.setConversationClarificationNeeded(false, []);
+		// --- Use appStore action to clear context ---
+		appStore._setConversationInternalState({
+			lastUserMessageText: '',
+			lastExtractionBatchId: null
+		});
 		return {
 			handled: true,
 			response:

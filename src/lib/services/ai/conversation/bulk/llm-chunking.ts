@@ -51,7 +51,7 @@ Output JSON:
 IMPORTANT:
 - Preserve the exact original text and line breaks within each chunk.
 - Do NOT perform any data extraction or modification within the chunks.
-- Output ONLY the raw JSON object. No explanations or summaries.
+- CRITICAL INSTRUCTION: Your response MUST BEGIN IMMEDIATELY with the opening brace '{' of the JSON object. DO NOT include ANY explanatory text, thinking, preamble, or markdown code blocks. Just the raw JSON. If you add ANY text before the JSON object, it will cause parsing errors.
 - If no transactions can be clearly identified, return { "transaction_chunks": [] }.
 `;
 }

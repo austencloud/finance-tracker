@@ -60,7 +60,9 @@ const initialConversationState: ConversationState = {
 		waitingForDirectionClarification: false,
 		clarificationTxnIds: [],
 		lastUserMessageText: '',
-		lastExtractionBatchId: null
+		lastExtractionBatchId: null,
+		waitingForDuplicateConfirmation: false,
+		pendingDuplicateTransactions: []
 	}
 };
 
@@ -467,6 +469,22 @@ export const appStore = {
 		}));
 	},
 
+	// --- NEW Internal Conversation State Updater ---
+	// Use this internally from services/handlers to update context
+	// Prefix with _ convention suggests internal use, though not enforced by TS/JS
+	_setConversationInternalState: (updates: Partial<AppState['conversation']['_internal']>) => {
+		appStateStore.update((state) => ({
+			...state,
+			conversation: {
+				...state.conversation,
+				_internal: {
+					...state.conversation._internal,
+					...updates
+				}
+			}
+		}));
+	},
+
 	// --- Bulk Processing Actions ---
 	initializeBulkChunks: (chunks: string[]) => {
 		const initialChunks: ProcessingChunk[] = chunks.map((chunk, index) => ({
@@ -596,11 +614,3 @@ export const appStore = {
 		}
 	}
 };
-
-// Optional: Trigger initial analysis if loading persisted data
-// queueMicrotask(() => {
-//     if (get(appStateStore).transactions.length > 0) {
-//         console.log('[AppStore] Initial data detected, triggering analysis.');
-//         appStore.runFinancialAnalysis();
-//     }
-// });

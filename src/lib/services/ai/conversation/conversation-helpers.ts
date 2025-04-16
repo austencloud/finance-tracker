@@ -65,4 +65,3 @@ export function isBulkData(message: string): boolean {
 // --- Removed Functions ---
 // safeAddAssistantMessage, startProcessing, finishProcessing, handleProcessingError, processInitialData
 // were removed because they directly modified state and belong in conversationService.ts
-// or should interact via conversationStore methods passed as arguments (less ideal).

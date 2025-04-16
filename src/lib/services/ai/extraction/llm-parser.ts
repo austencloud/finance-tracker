@@ -3,67 +3,90 @@
 import { v4 as uuidv4 } from 'uuid';
 import { resolveAndFormatDate } from '$lib/utils/date';
 import { categorizeTransaction } from '../../categorizer';
-import { z } from 'zod'; // <-- Added Zod import
+import { z } from 'zod';
 import {
 	LLMTransactionResponseSchema,
 	LLMTransactionExtractionSchema,
 	type LLMTransactionExtraction
-} from '$lib/schemas/LLMOutputSchema'; // Import Zod schemas
-import { TransactionSchema } from '$lib/schemas/TransactionSchema';
-import type { Transaction } from '$lib/stores/types';
+} from '$lib/schemas/LLMOutputSchema';
+import { TransactionSchema } from '$lib/schemas/TransactionSchema'; // Schema now includes batchId
+import type { Transaction } from '$lib/stores/types'; // Type includes batchId
 
-/**
- * Attempts to fix common JSON syntax errors often produced by LLMs.
- * (Keep this function as a fallback/helper if needed, but rely more on JSON mode + Zod)
- */
+// fixCommonJsonErrors function remains the same...
+
 export function fixCommonJsonErrors(jsonStr: string): string {
-	// ... (keep existing implementation)
 	if (!jsonStr || typeof jsonStr !== 'string') return '';
 	let fixed = jsonStr.trim();
 
-	// Remove leading/trailing non-JSON characters (like ```json ... ```)
-	fixed = fixed.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-	fixed = fixed.replace(/^```\s*/, '').replace(/\s*```$/, ''); // Handle case with just ```
+	// 1. Aggressively try to isolate the core JSON object or array first
+	const jsonStartMatch = fixed.match(/[{\[]/); // Find first '{' or '['
+	const jsonEndMatch = fixed.match(/}[^}]*$/); // Find last '}'
+	const arrayEndMatch = fixed.match(/][^\]]*$/); // Find last ']'
 
-	// Remove Pythonic None/True/False
+	if (jsonStartMatch) {
+		const startIndex = jsonStartMatch.index!;
+		let endIndex = -1;
+		if (jsonEndMatch && (!arrayEndMatch || jsonEndMatch.index! > arrayEndMatch.index!)) {
+			endIndex = jsonEndMatch.index! + 1; // Include the brace
+		} else if (arrayEndMatch) {
+			endIndex = arrayEndMatch.index! + 1; // Include the bracket
+		}
+
+		if (endIndex > startIndex) {
+			fixed = fixed.substring(startIndex, endIndex);
+			console.log('[Fixer] Isolated potential JSON block.');
+		} else {
+			console.warn(
+				'[Fixer] Could not clearly isolate JSON block, attempting fixes on whole string.'
+			);
+		}
+	} else {
+		console.warn('[Fixer] No opening brace/bracket found, attempting fixes on whole string.');
+	}
+
+	// 2. Replace Pythonic keywords AFTER isolating
 	fixed = fixed.replace(/\bNone\b/g, 'null');
 	fixed = fixed.replace(/\bTrue\b/g, 'true');
 	fixed = fixed.replace(/\bFalse\b/g, 'false');
 
-	// Add missing quotes around keys (simplified)
-	fixed = fixed.replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)(\s*:)/g, '$1"$2"$3');
+	// 3. Attempt to quote unquoted keys (apply carefully)
+	try {
+		// This regex might still be imperfect for all cases
+		fixed = fixed.replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)(\s*:)/g, '$1"$2"$3');
+		// Attempt to catch keys at the very beginning of the object
+		fixed = fixed.replace(/^\{\s*([a-zA-Z_][a-zA-Z0-9_]*)(\s*:)/g, '{\"$1\"$2');
+	} catch (e) {
+		console.warn('Regex error during key quoting fix:', e);
+	}
 
-	// Fix trailing commas
-	fixed = fixed.replace(/,\s*([\]}])/g, '$1');
-
-	// Remove comments (less common from APIs, but safe to include)
+	// 4. Remove comments
 	fixed = fixed.replace(/\/\/.*$/gm, '');
 	fixed = fixed.replace(/\/\*[\s\S]*?\*\//g, '');
 
-	// Basic comma insertion attempts (use cautiously)
-	fixed = fixed.replace(/(\")\s+(\")/g, '$1, $2'); // " ... " -> ", "
-	fixed = fixed.replace(/(\})\s+(\{)/g, '$1, $2'); // } ... { -> }, {
-	fixed = fixed.replace(/(\])\s+(\[)/g, '$1, $2'); // ] ... [ -> ], [
-	fixed = fixed.replace(/(\d)\s+(\")/g, '$1, $2'); // 1 ... " -> 1, "
-	fixed = fixed.replace(/(\")\s+(\{)/g, '$1, $2'); // " ... { -> ", {
+	// 5. Remove trailing commas repeatedly AFTER other fixes
+	try {
+		let prev = '';
+		while (prev !== fixed) {
+			prev = fixed;
+			fixed = fixed.replace(/,\s*([\]}])/g, '$1');
+		}
+	} catch (e) {
+		console.warn('Regex error during trailing comma fix:', e);
+	}
 
-	return fixed;
+	return fixed.trim(); // Trim final result
 }
-
-/**
- * Parses a JSON string from the LLM response, validates it against the expected schema,
- * and converts valid data into Transaction objects.
- * @param jsonString The raw string response from the LLM (ideally obtained via JSON mode).
- * @returns An array of validated Transaction objects.
- */
-export function parseTransactionsFromLLMResponse(jsonString: string): Transaction[] {
-	console.log('[LLM Parser] Attempting to parse and validate JSON response...');
-
+// --- Add batchId parameter ---
+export function parseTransactionsFromLLMResponse(
+	jsonString: string,
+	batchId: string // <-- Added parameter
+): Transaction[] {
+	console.log(`[LLM Parser] Attempting to parse/validate JSON for batch ${batchId}...`);
+	// ... (parsing logic with fixCommonJsonErrors remains the same) ...
 	if (!jsonString || typeof jsonString !== 'string' || jsonString.trim().length === 0) {
 		console.warn('[LLM Parser] Received empty or invalid input string.');
 		return [];
 	}
-
 	let parsedJson: unknown;
 	try {
 		parsedJson = JSON.parse(jsonString);
@@ -81,69 +104,58 @@ export function parseTransactionsFromLLMResponse(jsonString: string): Transactio
 	}
 
 	// --- Zod Validation ---
-	// Expecting { "transactions": [...] }
 	const validationResult = LLMTransactionResponseSchema.safeParse(parsedJson);
 
 	if (!validationResult.success) {
-		// Maybe it's just the array?
 		const arrayValidationResult = z.array(LLMTransactionExtractionSchema).safeParse(parsedJson);
 		if (arrayValidationResult.success) {
 			console.log('[LLM Parser] Validated as direct transaction array.');
-			// Convert raw LLM data to application's Transaction format
-			return convertLLMDataToTransactions(arrayValidationResult.data);
+			// --- Pass batchId down ---
+			return convertLLMDataToTransactions(arrayValidationResult.data, batchId); // <-- Pass batchId
 		} else {
 			console.error('[LLM Parser] Zod validation failed:', validationResult.error.flatten());
-			console.error('[LLM Parser] Parsed JSON object was:', parsedJson); // Log the object that failed validation
-			return []; // Validation failed
+			console.error('[LLM Parser] Parsed JSON object was:', parsedJson);
+			return [];
 		}
 	}
 
 	console.log(
 		`[LLM Parser] Zod validation successful. Found ${validationResult.data.transactions.length} raw transactions.`
 	);
-	// Convert raw LLM data to application's Transaction format
-	return convertLLMDataToTransactions(validationResult.data.transactions);
+	// --- Pass batchId down ---
+	return convertLLMDataToTransactions(validationResult.data.transactions, batchId); // <-- Pass batchId
 }
 
-/**
- * Converts raw transaction data extracted by the LLM (and validated by Zod)
- * into the application's Transaction format.
- * @param rawLLMTransactions An array of raw transaction objects matching LLMTransactionExtractionSchema.
- * @returns An array of validated Transaction objects.
- */
+// --- Add batchId parameter ---
 function convertLLMDataToTransactions(
-	rawLLMTransactions: LLMTransactionExtraction[]
+	rawLLMTransactions: LLMTransactionExtraction[],
+	batchId: string // <-- Added parameter
 ): Transaction[] {
 	const validatedTransactions: Transaction[] = [];
 
 	rawLLMTransactions.forEach((rawTxn, index) => {
 		try {
-			// --- Data Transformation & Validation ---
-			const date = resolveAndFormatDate(rawTxn.date); // Already string from Zod schema
-			const description = rawTxn.description.trim() || 'unknown'; // Already string
-			const type = rawTxn.type.trim() || 'unknown'; // Already string
-			const amount = rawTxn.amount; // Already number > 0 or 0 from Zod schema
-			const notes = rawTxn.details?.trim() || ''; // Map 'details' to 'notes'
-			let direction = rawTxn.direction.toLowerCase() as 'in' | 'out' | 'unknown'; // Already enum from Zod schema
+			// ... (Data Transformation & Validation for date, desc, type, amount, notes, direction remains the same) ...
+			const date = resolveAndFormatDate(rawTxn.date);
+			const description = rawTxn.description.trim() || 'unknown';
+			const type = rawTxn.type.trim() || 'unknown';
+			const amount = rawTxn.amount;
+			const notes = rawTxn.details?.trim() || '';
+			let direction = rawTxn.direction.toLowerCase() as 'in' | 'out' | 'unknown';
 
-			// --- Validation (Example: skip if essential info missing) ---
 			if (amount <= 0 && description === 'unknown' && date === 'unknown') {
-				console.warn(
-					`[LLM Converter] Skipping raw transaction at index ${index} due to missing amount/description/date:`,
-					rawTxn
-				);
-				return; // continue to next iteration
+				console.warn(`[LLM Converter] Skipping raw transaction at index ${index}...`);
+				return;
 			}
-
-			// --- Refine Direction if 'unknown' (using similar logic as before) ---
 			if (direction === 'unknown') {
+				// ... (direction inference logic remains the same) ...
 				const combinedText = (description + ' ' + type).toLowerCase();
 				if (
 					combinedText.includes('credit') ||
 					combinedText.includes('deposit') ||
 					combinedText.includes('received') ||
 					combinedText.includes('payment from') ||
-					description.toLowerCase().includes('sparkles enterta payroll') // Example
+					description.toLowerCase().includes('sparkles enterta payroll')
 				) {
 					direction = 'in';
 				} else if (
@@ -158,25 +170,22 @@ function convertLLMDataToTransactions(
 				) {
 					direction = 'out';
 				} else {
-					// Keep 'unknown' if still ambiguous
 					console.warn(
-						`[LLM Converter] Could not reliably determine direction for index ${index}, leaving as 'unknown'.`
+						`[LLM Converter] Could not reliably determine direction for index ${index}...`
 					);
 				}
 			}
-
-			// --- Categorization ---
 			let category = categorizeTransaction(description, type);
-			// Adjust category based on final direction
 			if (direction === 'out' && category === 'Other / Uncategorized') {
 				category = 'Expenses';
 			} else if (direction === 'in' && category === 'Expenses') {
-				category = 'Other / Uncategorized'; // Or re-categorize based on income rules
+				category = 'Other / Uncategorized';
 			}
 
-			// --- Create Final Object (Using TransactionSchema for final check) ---
+			// --- Create Final Object including the passed batchId ---
 			const finalTxnData: Transaction = {
-				id: uuidv4(),
+				id: uuidv4(), // Generate unique ID for the transaction itself
+				batchId: batchId, // <-- Assign the passed batchId
 				date,
 				description,
 				type,
@@ -187,8 +196,9 @@ function convertLLMDataToTransactions(
 			};
 
 			// Final validation against our application's Transaction schema
-			const finalCheck = TransactionSchema.safeParse(finalTxnData);
+			const finalCheck = TransactionSchema.safeParse(finalTxnData); // Schema now includes batchId
 			if (finalCheck.success) {
+				// Use finalCheck.data to ensure validated data is pushed
 				validatedTransactions.push(finalCheck.data);
 			} else {
 				console.warn(
@@ -205,7 +215,7 @@ function convertLLMDataToTransactions(
 	});
 
 	console.log(
-		`[LLM Converter] Successfully converted and validated ${validatedTransactions.length} out of ${rawLLMTransactions.length} raw transactions.`
+		`[LLM Converter] Successfully converted/validated ${validatedTransactions.length} out of ${rawLLMTransactions.length} raw transactions for batch ${batchId}.`
 	);
 	return validatedTransactions;
 }

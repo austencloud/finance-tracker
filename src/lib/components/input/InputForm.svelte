@@ -9,6 +9,7 @@
 	import { parseTransactionData, getSampleData } from '$lib/services/parser';
 	import { processBulkTransactions } from '$lib/services/bulkProcessingOrchestrator';
 	import { isLLMAvailable } from '$lib/services/ai/deepseek-client';
+	import { v4 as uuidv4 } from 'uuid';
 
 	// Import types
 	import type { Transaction } from '$lib/stores/types';
@@ -63,11 +64,11 @@
 					// Success message handled by appStore.finalizeBulkProcessing
 				} else {
 					console.log('Using standard processing');
-					const parsedTransactions = parseTransactionData(inputText);
-					// --- Call appStore action ---
+					const batchId = uuidv4(); // <-- Generate a batch ID
+					// Pass the batchId to the parser
+					const parsedTransactions = parseTransactionData(inputText, batchId);
 					appStore.addTransactions(parsedTransactions);
 					inputText = '';
-					// Success message handled by appStore.addTransactions
 				}
 			} catch (error) {
 				console.error('Error processing transactions:', error);
@@ -87,8 +88,9 @@
 		appStore.setLoading(true);
 		try {
 			const sampleData = getSampleData();
-			const parsedTransactions = parseTransactionData(sampleData);
-			// --- Call appStore action ---
+			const batchId = uuidv4(); // <-- Generate a batch ID
+			// Pass the batchId to the parser
+			const parsedTransactions = parseTransactionData(sampleData, batchId);
 			appStore.addTransactions(parsedTransactions);
 		} catch (error) {
 			console.error('Error loading sample data:', error);
@@ -198,19 +200,22 @@
 							type="file"
 							accept=".json"
 							on:change={importData}
-							disabled={$appStore.ui.loading} style="display: none;"
+							disabled={$appStore.ui.loading}
+							style="display: none;"
 						/>
 					</label>
 					<button
 						on:click={loadSampleData}
 						class="sample-data-button"
-						disabled={$appStore.ui.loading} >
+						disabled={$appStore.ui.loading}
+					>
 						Load Sample Data
 					</button>
 				</div>
 			</div>
 		</div>
-	{:else if inputMode === 'aiChat' && llmAvailable && !$appStore.bulkProcessing.isBulkProcessing} <div class="ai-chat-container">
+	{:else if inputMode === 'aiChat' && llmAvailable && !$appStore.bulkProcessing.isBulkProcessing}
+		<div class="ai-chat-container">
 			<LLMConversationLayout />
 		</div>
 	{/if}
@@ -227,7 +232,6 @@
 		</div>
 	{/if}
 </div>
-
 
 <style>
 	.form-container {

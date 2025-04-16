@@ -22,6 +22,7 @@ export type Category =
 
 export interface Transaction {
 	id: string;
+	batchId: string; // ID for the batch of transactions (for bulk processing)
 	date: string;
 	description: string;
 	type: string;
@@ -64,9 +65,8 @@ export type UserMood = 'neutral' | 'frustrated' | 'chatty' | 'unknown';
 export interface ConversationState {
 	messages: ConversationMessage[];
 	status: string;
-	isProcessing: boolean; // Specific to AI response generation
+	isProcessing: boolean;
 	progress: number;
-	// REMOVED: extractedTransactions: Transaction[];
 	userMood: UserMood;
 	_internal: {
 		initialPromptSent: boolean;
@@ -74,6 +74,11 @@ export interface ConversationState {
 		clarificationTxnIds: string[];
 		lastUserMessageText: string;
 		lastExtractionBatchId: string | null;
+
+		// --- Add these lines ---
+		waitingForDuplicateConfirmation?: boolean; // Flag if waiting for user
+		pendingDuplicateTransactions?: Transaction[]; // Store duplicates temporarily
+		// --- End added lines ---
 	};
 }
 

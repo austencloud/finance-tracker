@@ -1,17 +1,23 @@
-// --- FILENAME: src/lib/services/ai/conversation/handlers/mood-handler.ts ---
+// --- FILENAME: src/lib/services/ai/conversation/handlers/handleMood.ts ---
 
-import { conversationStore } from '../conversationStore';
+// --- REMOVE old store import ---
+// import { conversationStore } from '../conversationStore';
+// --- Import central store ---
+import { appStore } from '$lib/stores/AppStore';
 
 /**
  * Handles non-transactional, mood-based, or simple conversational inputs.
  * Examples: "Hello", "Thanks", "How are you?", "Okay", "Sounds good".
+ * Uses appStore actions to add messages directly for greetings/thanks.
+ * Returns response strings for affirmations/questions to be added by the service.
  *
  * @param message The user's input message.
+ * @param explicitDirectionIntent Optional direction hint (ignored by this handler).
  * @returns An object indicating if the message was handled and an optional response.
- * This handler might directly add messages and reset state for simple interactions.
  */
 export async function handleMood(
-	message: string
+	message: string,
+	explicitDirectionIntent: 'in' | 'out' | null // Keep signature consistent
 ): Promise<{ handled: boolean; response?: string }> {
 	const lowerMessage = message.toLowerCase().trim();
 	const simpleGreetings = ['hello', 'hi', 'hey', 'yo'];
@@ -20,35 +26,33 @@ export async function handleMood(
 	const simpleQuestions = ['how are you', 'what can you do'];
 
 	if (simpleGreetings.some((g) => lowerMessage.startsWith(g))) {
-		// Respond directly and potentially reset processing if it was just a greeting
-		conversationStore._addMessage(
+		// --- Respond directly using appStore action ---
+		appStore.addConversationMessage(
 			'assistant',
 			'Hello there! How can I help you with your transactions today?'
 		);
-		// Decide if this should reset processing. If the user just said "Hi", maybe not.
-		// If the app was in an error state, maybe reset?
-		// For now, let's assume it doesn't stop other processing unless the service decides.
-		// We won't return a response string here, as we added the message directly.
-		// We also won't set processing to false here, let the service handle the flow.
+		// Indicate handled, no response string needed as message was added directly.
+		// The service's finishProcessing won't run if no response string is returned.
 		return { handled: true };
 	}
 
 	if (simpleThanks.some((t) => lowerMessage.includes(t))) {
-		conversationStore._addMessage('assistant', "You're welcome!");
+		// --- Respond directly using appStore action ---
+		appStore.addConversationMessage('assistant', "You're welcome!");
+		// Indicate handled, no response string needed.
 		return { handled: true };
 	}
 
 	if (simpleAffirmations.some((a) => lowerMessage === a)) {
-		// Often follows an action. Might not need a response,
-		// or could be a generic "Okay, what's next?"
-		// Let's provide a minimal response that the service can use.
+		// Often follows an action. Provide a minimal response string
+		// for the service layer to add via finishProcessing.
 		return { handled: true, response: 'Okay.' };
 	}
 
 	if (simpleQuestions.some((q) => lowerMessage.includes(q))) {
 		const response =
 			"I'm an AI assistant designed to help you extract and organize transaction data from text or descriptions. Just paste your data or tell me about your spending!";
-		// The service will add this response via finishProcessing
+		// Return the response string for the service layer to add.
 		return { handled: true, response: response };
 	}
 

@@ -1,21 +1,19 @@
 <script lang="ts">
-	import {
-		conversationMessages,
-		conversationStatus,
-		isProcessing
-	} from '$lib/services/ai/conversation/conversationDerivedStores';
-	import type { ConversationMessage } from '$lib/services/ai/conversation/conversationStore';
+	// 1. Import the central store and necessary types
+	import { appStore } from '$lib/stores/AppStore';
+	import type { ConversationMessage } from '$lib/stores/types'; // Assuming type is here
 	import { onMount, onDestroy } from 'svelte';
-	import { get } from 'svelte/store';
+	// Removed unused 'get' import
 
 	let messagesContainer: HTMLElement;
 	let autoScroll = true;
-	let unsub: () => void;
+	let unsub: () => void; // Unsubscriber function for appStore
 
-	// Cast the store values to their expected types
-	$: messages = $conversationMessages as ConversationMessage[];
-	$: status = $conversationStatus as string;
-	$: processing = $isProcessing as boolean;
+	// 2. Access conversation state directly from appStore reactively
+	// No need for explicit casting 'as ...' if appStore is properly typed
+	$: messages = $appStore.conversation.messages;
+	$: status = $appStore.conversation.status;
+	$: processing = $appStore.conversation.isProcessing;
 
 	// Basic utility to HTML-escape and format code blocks, bold, italic, etc.
 	function formatMessage(content: string): string {
@@ -53,12 +51,20 @@
 			// Basic Lists (simple implementation)
 			// Unordered lists
 			formatted = formatted.replace(/^\s*-\s+(.*)/gm, '<li>$1</li>'); // Convert lines starting with '-'
-			formatted = formatted.replace(/(<li>.*?<\/li>)/gs, '<ul>$1</ul>'); // Wrap consecutive li in ul
+			// Wrap list items only if they aren't already wrapped (lookbehind assertion)
+			formatted = formatted.replace(/(?<!<ul>\s*)(<li>.*?<\/li>)/gs, (match, liBlock) => {
+				// Check if the block is already within a <ul> or <ol> context nearby if needed
+				return `<ul>${liBlock}</ul>`; // Simple wrap for now
+			});
 			formatted = formatted.replace(/<\/ul>\s*<ul>/g, ''); // Merge adjacent lists
 
 			// Ordered lists (simple implementation - doesn't handle nested or complex numbering)
 			formatted = formatted.replace(/^\s*\d+\.\s+(.*)/gm, '<li>$1</li>'); // Convert lines starting with '1.', '2.' etc.
-			formatted = formatted.replace(/(<li>.*?<\/li>)/gs, '<ol>$1</ol>'); // Wrap consecutive li in ol
+			// Wrap list items only if they aren't already wrapped (lookbehind assertion)
+			formatted = formatted.replace(/(?<!<ol>\s*)(<li>.*?<\/li>)/gs, (match, liBlock) => {
+				// Check if the block is already within a <ul> or <ol> context nearby if needed
+				return `<ol>${liBlock}</ol>`; // Simple wrap for now
+			});
 			formatted = formatted.replace(/<\/ol>\s*<ol>/g, ''); // Merge adjacent lists
 
 			// Convert newlines to <br> tags *outside* of pre blocks
@@ -70,7 +76,9 @@
 						return part;
 					} else {
 						// It's regular text
-						return part.replace(/\n/g, '<br>');
+						// Avoid converting newlines immediately after closing list tags or before opening ones
+						// to prevent extra space around lists.
+						return part.replace(/(?<!(<\/ul>|<\/ol>))\n(?!\s*(<ul>|<ol>|<li>))/g, '<br>');
 					}
 				})
 				.join('');
@@ -78,6 +86,7 @@
 			return formatted;
 		} catch (e) {
 			console.error('[LLMMessageList] Error in formatMessage:', e);
+			// Return escaped original content on error? Or a fixed error message.
 			return 'Error formatting message.';
 		}
 	}
@@ -85,37 +94,52 @@
 	function handleScroll() {
 		if (messagesContainer) {
 			const { scrollTop, scrollHeight, clientHeight } = messagesContainer;
-			// If user scrolls up significantly, disable auto-scroll
-			if (scrollHeight - scrollTop - clientHeight > 50) {
-				autoScroll = false;
-			} else {
-				autoScroll = true;
-			}
+			// Determine if the user is close to the bottom
+			const isScrolledToBottom = scrollHeight - scrollTop - clientHeight < 50; // Threshold of 50px
+			autoScroll = isScrolledToBottom;
 		}
 	}
 
 	onMount(() => {
-		// Subscribe to conversationMessages so we scroll down upon new messages
-		unsub = conversationMessages.subscribe(() => {
+		// 3. Subscribe to the main appStore to react to changes (specifically for scrolling)
+		// The actual message rendering is handled by the reactive '$: messages' above
+		unsub = appStore.subscribe((currentState) => {
+			// We only need to scroll if autoScroll is enabled (user is near the bottom)
+			// and the container exists. The subscription triggers on *any* state change,
+			// but scrolling only happens if conditions are met.
 			if (autoScroll && messagesContainer) {
+				// Use requestAnimationFrame to ensure scrolling happens after DOM updates
 				requestAnimationFrame(() => {
 					if (messagesContainer) {
+						// Double-check existence inside RAF
 						messagesContainer.scrollTop = messagesContainer.scrollHeight;
 					}
 				});
 			}
+			// Optional: could add logic here to only scroll if message count changed,
+			// but current approach is simpler and usually fine.
 		});
+
+		// Add scroll listener to manage the autoScroll flag
 		messagesContainer?.addEventListener('scroll', handleScroll);
+
+		// Initial scroll to bottom when component mounts
+		if (messagesContainer) {
+			requestAnimationFrame(() => {
+				messagesContainer.scrollTop = messagesContainer.scrollHeight;
+			});
+		}
 	});
 
 	onDestroy(() => {
+		// 4. Unsubscribe from appStore
 		if (unsub) unsub();
 		messagesContainer?.removeEventListener('scroll', handleScroll);
 	});
 </script>
 
 <div class="messages-container" bind:this={messagesContainer}>
-	{#each messages as message, i (i)}
+	{#each messages as message, i (message.timestamp || i)}
 		<div class="message {message.role === 'user' ? 'user-message' : 'assistant-message'}">
 			<div class="message-header">
 				{message.role === 'user' ? 'You' : 'Assistant'}
@@ -124,7 +148,7 @@
 				{#if message.content}
 					{@html formatMessage(message.content)}
 				{:else}
-					<span style="color: red;">[Empty Message Content]</span>
+					<span style="color: grey; font-style: italic;">[Empty Message]</span>
 				{/if}
 			</div>
 		</div>
@@ -132,7 +156,7 @@
 		<p class="no-messages-placeholder">No messages yet...</p>
 	{/each}
 
-	{#if processing && status === 'Thinking...'}
+	{#if processing}
 		<div class="message assistant-message thinking">
 			<div class="message-header">Assistant</div>
 			<div class="message-content">
@@ -141,6 +165,9 @@
 					<span></span>
 					<span></span>
 				</div>
+				{#if status && status !== 'Thinking...'}
+					<span style="margin-left: 8px; font-style: italic; color: #6c757d;">{status}</span>
+				{/if}
 			</div>
 		</div>
 	{/if}
@@ -155,6 +182,9 @@
 		flex-direction: column;
 		gap: 15px;
 		background-color: white;
+		/* Improve scrollbar appearance */
+		scrollbar-width: thin;
+		scrollbar-color: #adb5bd #f1f3f5;
 	}
 	.message {
 		display: flex;
@@ -165,51 +195,77 @@
 		position: relative;
 		font-size: 14px;
 		line-height: 1.4;
+		word-wrap: break-word; /* Ensure long words break */
 	}
 	.user-message {
 		align-self: flex-end;
-		background-color: #d1eaff;
+		background-color: #d1eaff; /* Slightly softer blue */
 		color: #1c3d5a;
 		border-bottom-right-radius: 4px;
 	}
 	.assistant-message {
 		align-self: flex-start;
-		background-color: #f1f3f5;
+		background-color: #f1f3f5; /* Standard light grey */
 		color: #343a40;
 		border-bottom-left-radius: 4px;
 	}
 	.message-header {
 		font-size: 11px;
 		font-weight: bold;
-		margin-bottom: 3px;
+		margin-bottom: 4px; /* Slightly more space */
 		color: #6c757d;
 		text-transform: uppercase;
+		opacity: 0.8; /* De-emphasize slightly */
 	}
 	.message-content {
-		word-break: break-word;
+		word-break: break-word; /* Already set on .message, but good fallback */
 	}
 	/* Ensure lists inside messages look okay */
 	.message-content :global(ul),
 	.message-content :global(ol) {
-		padding-left: 20px;
-		margin-top: 5px;
-		margin-bottom: 5px;
+		padding-left: 25px; /* More standard indentation */
+		margin-top: 8px;
+		margin-bottom: 8px;
 	}
+	.message-content :global(li) {
+		margin-bottom: 4px; /* Space between list items */
+	}
+
 	/* Style for code blocks */
 	.message-content :global(pre.code-block) {
 		background-color: #e9ecef;
 		border: 1px solid #ced4da;
 		border-radius: 4px;
-		padding: 10px;
+		padding: 12px; /* More padding */
 		overflow-x: auto;
 		white-space: pre; /* Keep whitespace within code block */
-		margin: 8px 0;
-		font-family: monospace;
+		margin: 10px 0; /* More vertical space */
+		font-family:
+			'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace; /* Better font stack */
 		font-size: 13px;
+		line-height: 1.5; /* Better readability for code */
+		color: #212529; /* Darker text for contrast */
 	}
 	.message-content :global(pre.code-block code) {
-		font-family: monospace; /* Ensure code tag also uses monospace */
+		font-family: inherit; /* Inherit from pre */
+		font-size: inherit;
+		background: none; /* Ensure no conflicting background */
+		padding: 0;
 	}
+	/* Styling for bold/italic */
+	.message-content :global(strong) {
+		font-weight: 600; /* Slightly bolder */
+	}
+	.message-content :global(em) {
+		font-style: italic;
+	}
+	/* Add spacing after paragraphs/breaks */
+	.message-content :global(br) {
+		content: '';
+		display: block;
+		margin-bottom: 0.5em; /* Space after a line break */
+	}
+
 	.no-messages-placeholder {
 		text-align: center;
 		color: #aaa;
@@ -219,18 +275,19 @@
 	.thinking .message-content {
 		display: flex;
 		align-items: center;
-		height: 24px; /* Adjust height if needed */
-		padding-top: 5px;
-		padding-bottom: 5px;
+		/* height: 24px; /* Let height be natural */
+		padding-top: 8px; /* Adjust padding */
+		padding-bottom: 8px;
+		min-height: 24px; /* Ensure minimum height */
 	}
 	.typing-indicator {
 		display: flex;
 		align-items: center;
-		gap: 4px;
+		gap: 5px; /* Slightly more gap */
 	}
 	.typing-indicator span {
-		height: 8px;
-		width: 8px;
+		height: 9px; /* Slightly larger dots */
+		width: 9px;
 		background-color: #adb5bd;
 		border-radius: 50%;
 		display: inline-block;
@@ -252,7 +309,7 @@
 			opacity: 0.5;
 		}
 		50% {
-			transform: translateY(-4px);
+			transform: translateY(-5px); /* Slightly more bounce */
 			opacity: 1;
 		}
 	}

@@ -2,108 +2,90 @@
 
 import { deepseekGenerateJson, isLLMAvailable } from '../deepseek-client';
 import { getExtractionPrompt, getOptimizedExtractionPrompt } from '../prompts';
-import { enhancedLocalExtraction, extractBankStatementFormat } from './local-extractors';
+// Ensure local extractors are imported
+import { enhancedLocalExtraction } from './local-extractors';
 import { parseTransactionsFromLLMResponse } from './llm-parser';
 import type { Transaction } from '$lib/stores/types';
+import { v4 as uuidv4 } from 'uuid'; // <-- Import uuid
 
-// Simple cache (consider more robust caching if needed)
+// Cache remains the same
 const extractionCache = new Map<string, { timestamp: number; data: Transaction[] }>();
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+const CACHE_DURATION = 5 * 60 * 1000;
 
 /**
  * Orchestrates the extraction of structured transaction data from raw text.
- * Prioritizes local methods, falls back to LLM API (with JSON mode and Zod validation).
- * Includes basic caching.
- *
- * @param text The raw text potentially containing transaction data.
- * @returns A promise resolving to an array of extracted transactions.
+ * Includes batchId generation.
  */
 export async function extractTransactionsFromText(text: string): Promise<Transaction[]> {
-	const cacheKey = text.substring(0, 200); // Use a slightly longer key
-
-	// Check cache
+	const cacheKey = text.substring(0, 200);
 	const cached = extractionCache.get(cacheKey);
 	if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
 		console.log('[Orchestrator] Using cached extraction results');
-		return [...cached.data]; // Return copy
+		return [...cached.data];
 	}
 
 	console.log('[Orchestrator] Extracting from:', text.substring(0, 100) + '...');
 	const today = new Date().toISOString().split('T')[0];
+	// --- Generate a single batchId for this extraction attempt ---
+	const batchId = uuidv4();
+	console.log(`[Orchestrator] Generated batchId: ${batchId}`);
 	let result: Transaction[] = [];
 
-	// --- Strategy 1: Optimized Local Extraction for Bank Statements ---
+	// --- Strategy 1 & 3 Combined: Enhanced Local Extraction ---
+	// Try local methods first as they are faster and cheaper
+	console.log('[Orchestrator] Attempting enhanced local extraction...');
 	try {
-		const bankTransactions = extractBankStatementFormat(text);
-		if (bankTransactions.length > 0) {
-			console.log(
-				`[Orchestrator] Local bank statement extraction successful (${bankTransactions.length} txns).`
-			);
-			result = bankTransactions;
+		// --- Pass batchId to local extractor ---
+		result = enhancedLocalExtraction(text, today, batchId);
+		if (result.length > 0) {
+			console.log(`[Orchestrator] Local extraction successful (${result.length} txns).`);
 			extractionCache.set(cacheKey, { timestamp: Date.now(), data: [...result] });
 			return result;
 		}
-		console.log('[Orchestrator] Local bank statement extraction found no transactions.');
+		console.log('[Orchestrator] Local extraction found no transactions.');
 	} catch (error) {
-		console.error('[Orchestrator] Error in local bank statement extraction:', error);
+		console.error('[Orchestrator] Error in local extraction:', error);
+		// Proceed to LLM if local fails
 	}
 
-	// --- Strategy 2: LLM API Extraction (if available and text size reasonable) ---
-	const llmCouldBeAvailable = await isLLMAvailable(); // Check once
-	// Adjusted limit based on API/prompt considerations
-	if (llmCouldBeAvailable && text.length > 0 && text.length <= 15000) {
-		console.log('[Orchestrator] Attempting LLM extraction...');
-		try {
-			// Determine prompt type (optional refinement)
-			const looksLikeStatement =
-				/^\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|[0-1]?[0-9]\/[0-3]?[0-9]\/\d{2,4})/m.test(
-					text.substring(0, 500)
-				);
-			const extractionPrompt = looksLikeStatement
-				? getOptimizedExtractionPrompt(text, today)
-				: getExtractionPrompt(text, today);
-
-			const rawJsonResponse = await deepseekGenerateJson(extractionPrompt); // Uses JSON mode
-			if (rawJsonResponse) {
-				result = parseTransactionsFromLLMResponse(rawJsonResponse); // Uses Zod validation
-				console.log(
-					`[Orchestrator] LLM extraction successful (${result.length} txns after parsing/validation).`
-				);
-			} else {
-				console.warn('[Orchestrator] LLM returned empty response.');
-				result = [];
-			}
-
-			// Use LLM result only if it found something valid
-			if (result.length > 0) {
-				extractionCache.set(cacheKey, { timestamp: Date.now(), data: [...result] });
-				return result;
-			} else {
-				console.log('[Orchestrator] LLM extraction yielded no valid transactions.');
-			}
-		} catch (error) {
-			console.error('[Orchestrator] LLM API extraction error:', error);
-			// Fall through to general local extraction if API fails
-		}
-	} else if (!llmCouldBeAvailable) {
-		console.log('[Orchestrator] LLM not available, skipping API call.');
-	} else {
-		console.log('[Orchestrator] Text too large or empty for LLM API, relying on local extraction.');
-	}
-
-	// --- Strategy 3: Fallback to Enhanced General Local Extraction ---
+	// --- Strategy 2: LLM API Extraction Fallback ---
 	if (result.length === 0) {
-		console.log('[Orchestrator] Falling back to enhanced general local extraction.');
-		try {
-			result = enhancedLocalExtraction(text, today);
-			console.log(`[Orchestrator] Enhanced local extraction found ${result.length} transactions.`);
-		} catch (error) {
-			console.error('[Orchestrator] Error in enhanced local extraction:', error);
-			result = []; // Ensure result is an empty array on error
+		// Only try LLM if local methods found nothing
+		const llmCouldBeAvailable = await isLLMAvailable();
+		if (llmCouldBeAvailable && text.length > 0 && text.length <= 15000) {
+			console.log('[Orchestrator] Attempting LLM extraction...');
+			try {
+				const looksLikeStatement =
+					/^\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|[0-1]?[0-9]\/[0-3]?[0-9]\/\d{2,4})/m.test(
+						text.substring(0, 500)
+					);
+				const extractionPrompt = looksLikeStatement
+					? getOptimizedExtractionPrompt(text, today)
+					: getExtractionPrompt(text, today);
+
+				const rawJsonResponse = await deepseekGenerateJson(extractionPrompt);
+				if (rawJsonResponse) {
+					// --- Pass batchId to LLM parser ---
+					result = parseTransactionsFromLLMResponse(rawJsonResponse, batchId); // <-- Pass batchId here
+					console.log(
+						`[Orchestrator] LLM extraction successful (${result.length} txns after parsing/validation).`
+					);
+				} else {
+					console.warn('[Orchestrator] LLM returned empty response.');
+					result = [];
+				}
+			} catch (error) {
+				console.error('[Orchestrator] LLM API extraction error:', error);
+				result = []; // Ensure result is empty on LLM error
+			}
+		} else if (!llmCouldBeAvailable) {
+			console.log('[Orchestrator] LLM not available, skipping API call.');
+		} else {
+			console.log('[Orchestrator] Text too large or empty for LLM API.');
 		}
 	}
 
-	// Cache the final result (even if empty)
+	// Cache the final result (even if empty or from local extraction failure)
 	extractionCache.set(cacheKey, { timestamp: Date.now(), data: [...result] });
 	console.log(`[Orchestrator] Final result: ${result.length} transactions.`);
 	return result;

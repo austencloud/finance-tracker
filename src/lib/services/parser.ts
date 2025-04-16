@@ -1,98 +1,131 @@
 // src/lib/services/parser.ts
-import type { Transaction, Category } from '$lib/types';
-import { generateTransactionId } from '$lib/utils/helpers';
+import type { Category, Transaction } from '$lib/stores/types';
+// REMOVE unused helper: import { generateTransactionId } from '$lib/utils/helpers';
+import { v4 as uuidv4 } from 'uuid'; // Import UUID
 import { categorizeTransaction } from './categorizer';
+import { resolveAndFormatDate } from '$lib/utils/date'; // Import date helper
 
 /**
- * Parses raw transaction text into structured transaction objects
+ * Parses raw transaction text into structured transaction objects.
+ * NOTE: This is a simpler parser, consider using enhancedLocalExtraction from
+ * 'src/lib/services/ai/extraction/local-extractors.ts' for more robust local parsing.
+ *
+ * @param text The text to parse.
+ * @param batchId A unique identifier for this parsing operation. // <-- Added parameter
+ * @returns An array of parsed Transaction objects.
  */
-export function parseTransactionData(text: string): Transaction[] {
-  // Split the text into blocks
-  const blocks = text.split(/\n\s*\n+/);
-  const parsedTransactions: Transaction[] = [];
+export function parseTransactionData(text: string, batchId: string): Transaction[] { // <-- Added parameter
+    // Split the text into blocks based on one or more blank lines
+    const blocks = text.split(/\n\s*\n+/);
+    const parsedTransactions: Transaction[] = [];
 
-  for (let block of blocks) {
-    if (!block.trim()) continue;
+    for (let block of blocks) {
+        if (!block.trim()) continue;
 
-    const lines = block.trim().split('\n');
+        const lines = block.trim().split('\n').map(line => line.trim()); // Trim each line
 
-    // Extract date - look for a date format in the first or second line
-    let date = '';
-    for (let i = 0; i < Math.min(3, lines.length); i++) {
-      const dateLine = lines[i].trim();
-      // Check for common date formats (MM/DD/YYYY or Month DD, YYYY)
-      if (
-        /\d{1,2}\/\d{1,2}\/\d{4}/.test(dateLine) ||
-        /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},\s+\d{4}\b/i.test(dateLine)
-      ) {
-        date = dateLine;
-        break;
-      }
-    }
-
-    // Extract description - try to find the most descriptive line
-    let description = '';
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (
-        line &&
-        !line.includes('$') &&
-        !/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},\s+\d{4}\b/i.test(line) &&
-        !/\d{1,2}\/\d{1,2}\/\d{4}/.test(line) &&
-        !/^(ACH credit|Zelle credit|Card|Deposit|ATM transaction|Other)$/.test(line)
-      ) {
-        description = line;
-        // If we find a line with more than just a few words, use it as the description
-        if (line.split(/\s+/).length > 3) {
-          break;
+        // Extract date - look for a date format in the first few lines
+        let dateStr = '';
+        for (let i = 0; i < Math.min(3, lines.length); i++) {
+            const dateLine = lines[i];
+            // More robust date check
+            if (
+                /\d{1,2}\/\d{1,2}\/\d{2,4}/.test(dateLine) || // MM/DD/YYYY or MM/DD/YY
+                /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},?\s+\d{4}\b/i.test(dateLine) // Month DD, YYYY
+            ) {
+                dateStr = dateLine;
+                break;
+            }
         }
-      }
+        // Resolve the found date string
+        const date = resolveAndFormatDate(dateStr); // Use helper, defaults to 'unknown'
+
+        // Extract amount - find line starting with $
+        let amountStr = '0';
+        let amountLineIndex = -1; // Track where amount was found
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            // Match lines that primarily contain a currency amount
+            const match = line.match(/^\$?[\s\d,]*\d\.\d{2}$/); // Allow optional space/commas before/after $
+            if (match) {
+                // More robust cleaning: remove $, commas, and any leading/trailing whitespace
+                amountStr = line.replace(/[$,\s]/g, '');
+                amountLineIndex = i;
+                break;
+            }
+        }
+        // --- Convert amount string to number ---
+        const amount = parseFloat(amountStr) || 0; // Use parseFloat, fallback to 0 if NaN
+
+        // Extract description & type - process lines *not* used for date or amount
+        let description = '';
+        let type = '';
+        const potentialDescLines: string[] = [];
+        const potentialTypeLines: string[] = [];
+
+        for (let i = 0; i < lines.length; i++) {
+            // Skip the line if it was identified as the date or amount line
+            if (lines[i] === dateStr || i === amountLineIndex) {
+                continue;
+            }
+            const line = lines[i];
+            // Basic type detection (can be improved)
+            if (/credit|deposit|payment from/i.test(line)) {
+                potentialTypeLines.push(line);
+            } else if (/debit|payment to|purchase|withdrawal|charge|card/i.test(line)) {
+                 potentialTypeLines.push(line);
+            } else if (line) { // Any other non-empty line is a potential description part
+                potentialDescLines.push(line);
+            }
+        }
+        // Consolidate description and type
+        description = potentialDescLines.join(' ').trim() || 'Unknown Description'; // Join potential lines
+        type = potentialTypeLines.join(' ').trim() || 'Unknown Type'; // Join potential type lines
+
+
+        // Basic direction inference
+        const lowerTypeDesc = (description + ' ' + type).toLowerCase();
+        let direction: 'in' | 'out' | 'unknown' = 'unknown';
+         if (lowerTypeDesc.includes('credit') || lowerTypeDesc.includes('deposit') || lowerTypeDesc.includes('payment from')) {
+             direction = 'in';
+         } else if (lowerTypeDesc.includes('debit') || lowerTypeDesc.includes('payment to') || lowerTypeDesc.includes('purchase') || lowerTypeDesc.includes('withdrawal') || lowerTypeDesc.includes('charge') || lowerTypeDesc.includes('card')) {
+             direction = 'out';
+         }
+
+        // Add the transaction if we have at least an amount
+        if (amount > 0) {
+            const category = categorizeTransaction(description, type);
+
+            // Adjust category based on direction
+            const finalCategory = (direction === 'out' && category === 'Other / Uncategorized') ? 'Expenses' :
+                                 (direction === 'in' && category === 'Expenses') ? 'Other / Uncategorized' : category;
+
+            // Ensure object matches Transaction type
+            const transaction: Transaction = {
+                id: uuidv4(), // Use UUID for string ID
+                batchId: batchId, // Assign passed batchId
+                date,
+                description,
+                type,
+                amount, // Assign the parsed number
+                category: finalCategory,
+                notes: '',
+                direction
+            };
+            parsedTransactions.push(transaction);
+        }
     }
 
-    // Extract transaction type
-    let type = '';
-    for (let line of lines) {
-      if (/^(ACH credit|Zelle credit|Card|Deposit|ATM transaction|Other)$/.test(line.trim())) {
-        type = line.trim();
-        break;
-      }
-    }
-
-    // Extract amount
-    let amount = '0';
-    for (let line of lines) {
-      const match = line.match(/\$[\d,]+\.\d{2}/);
-      if (match) {
-        amount = match[0].replace(/[,$]/g, '');
-        break;
-      }
-    }
-
-    // Add the transaction if we have meaningful data
-    if ((date || description) && amount !== '0') {
-      const category = categorizeTransaction(description, type);
-
-      parsedTransactions.push({
-        id: generateTransactionId(),
-        date,
-        description,
-        type,
-        amount,
-        category,
-        notes: '',
-        direction: type.includes('credit') ? 'in' : 'out'
-      });
-    }
-  }
-
-  return parsedTransactions;
+    return parsedTransactions;
 }
+
 
 /**
  * Returns sample transaction data for testing
  */
 export function getSampleData(): string {
-  return `
+    // ... (sample data remains the same) ...
+    return `
 Dec 20, 2024
 
 PAYPAL TRANSFER PPD ID: PAYPALSD11
