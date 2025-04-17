@@ -139,7 +139,7 @@
 </script>
 
 <div class="messages-container" bind:this={messagesContainer}>
-	{#each messages as message, i (message.timestamp || i)}
+	{#each messages as message (message.id)}
 		<div class="message {message.role === 'user' ? 'user-message' : 'assistant-message'}">
 			<div class="message-header">
 				{message.role === 'user' ? 'You' : 'Assistant'}

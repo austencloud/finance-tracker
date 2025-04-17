@@ -15,7 +15,7 @@
 
 	// Import model discovery
 	import { initializeModelDiscovery } from '$lib/services/ai/model-discovery';
-	import { isLLMAvailable } from '$lib/services/ai/llm';
+	import { isLLMAvailable } from '$lib/services/ai/llm-helpers';
 
 	onMount(async () => {
 		initialize(); // Initialize conversation service

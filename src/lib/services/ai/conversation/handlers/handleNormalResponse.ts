@@ -9,7 +9,7 @@ import { get } from 'svelte/store';
 // import { conversationMessages } from '../conversationDerivedStores';
 
 // --- Keep other necessary imports ---
-import { llmChat, getLLMFallbackResponse } from '../../llm';
+import { llmChat, getLLMFallbackResponse } from '../../llm-helpers';
 import { getSystemPrompt } from '../../prompts';
 import type { ConversationMessage } from '$lib/stores/types'; // Import type if needed
 

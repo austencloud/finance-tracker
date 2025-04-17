@@ -6,7 +6,7 @@ import {
 	detectAnomalies,
 	predictFutureTransactions
 } from '$lib/services/analytics';
-import { isLLMAvailable } from '$lib/services/ai/llm';
+import { isLLMAvailable } from '$lib/services/ai/llm-helpers';
 
 import type {
 	AppState,
@@ -148,13 +148,17 @@ export const appStore = {
 
 	// Conversation helpers
 	addConversationMessage(role: 'user' | 'assistant', content: string) {
-		appStateStore.update((s) => ({
-			...s,
-			conversation: {
-				...s.conversation,
-				messages: [...s.conversation.messages, createMsg(role, content)]
-			}
-		}));
+		const msg = {
+			id: uuidv4(), //  ← NEW guaranteed‑unique key
+			role,
+			content: content.trim(),
+			timestamp: Date.now()
+		};
+
+		appStateStore.update((s) => {
+			s.conversation.messages.push(msg);
+			return s;
+		});
 	},
 
 	resetConversation() {

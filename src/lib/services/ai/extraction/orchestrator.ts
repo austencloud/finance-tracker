@@ -6,7 +6,7 @@ import { enhancedLocalExtraction } from './local-extractors';
 import { parseTransactionsFromLLMResponse } from './llm-parser';
 import type { Transaction } from '$lib/stores/types';
 import { v4 as uuidv4 } from 'uuid'; // <-- Import uuid
-import { isLLMAvailable, llmGenerateJson } from '../llm';
+import { isLLMAvailable, llmGenerateJson } from '../llm-helpers';
 
 // Cache remains the same
 const extractionCache = new Map<string, { timestamp: number; data: Transaction[] }>();
@@ -63,7 +63,9 @@ export async function extractTransactionsFromText(text: string): Promise<Transac
 					? getOptimizedExtractionPrompt(text, today)
 					: getExtractionPrompt(text, today);
 
-				const rawJsonResponse = await llmGenerateJson([{ role: 'user', content: extractionPrompt }]);
+				const rawJsonResponse = await llmGenerateJson([
+					{ role: 'user', content: extractionPrompt }
+				]);
 				if (rawJsonResponse) {
 					// --- Pass batchId to LLM parser ---
 					result = parseTransactionsFromLLMResponse(rawJsonResponse, batchId); // <-- Pass batchId here

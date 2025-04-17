@@ -4,7 +4,7 @@
 
 	// Import services
 	import { suggestCategory } from '$lib/services/ai/category';
-	import { isLLMAvailable } from '$lib/services/ai/llm';
+	import { isLLMAvailable } from '$lib/services/ai/llm-helpers';
 
 	// Import types
 	import type { Category, Transaction } from '$lib/stores/types';

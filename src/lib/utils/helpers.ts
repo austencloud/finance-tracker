@@ -21,26 +21,89 @@ export function downloadFile(data: string, filename: string, mimeType: string): 
 	setTimeout(() => URL.revokeObjectURL(url), 100);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// WORD‑BASED NUMBER SUPPORT
+// ─────────────────────────────────────────────────────────────────────────────
+
+const WORD_NUMBERS = [
+	'zero',
+	'one',
+	'two',
+	'three',
+	'four',
+	'five',
+	'six',
+	'seven',
+	'eight',
+	'nine',
+	'ten',
+	'eleven',
+	'twelve',
+	'thirteen',
+	'fourteen',
+	'fifteen',
+	'sixteen',
+	'seventeen',
+	'eighteen',
+	'nineteen',
+	'twenty',
+	'thirty',
+	'forty',
+	'fifty',
+	'sixty',
+	'seventy',
+	'eighty',
+	'ninety',
+	'hundred',
+	'thousand'
+];
+
+// Build a regex that matches e.g. “twenty”, “fifteen hundred”, “fifteen‑hundred dollars”
+const WORD_NUM_REGEX = new RegExp(
+	// match sequences like “fifteen”, “fifteen hundred”, “twenty‑five”, optionally followed by “dollars” or “bucks”
+	'\\b(?:' +
+		WORD_NUMBERS.join('|') +
+		')' +
+		'(?:[- ](?:' +
+		WORD_NUMBERS.join('|') +
+		'))*' +
+		'(?:[ -](?:dollars?|bucks?))?\\b',
+	'i'
+);
+
+/**
+ * Heuristic to guess if a string might contain transaction info.
+ * Now catches:
+ *  - $123, 123 dollars, CAD/eur, etc.
+ *  - simple words like “twenty dollars”, “fifteen‑hundred”
+ *  - transaction keywords plus a date keyword
+ */
 export function textLooksLikeTransaction(text: string): boolean {
 	const lowerText = text.toLowerCase();
 
-	const hasAmount =
-		/\$\s?\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?/i.test(lowerText) ||
-		/\d{1,3}(?:,\d{3})*(?:\.\d{2})?\s*(?:dollars?|usd|cad|eur|gbp|bucks?)/i.test(lowerText) ||
-		/\b\d+\b/.test(lowerText) ||
-		/\b(a|one)\s+(dollar|buck)\b/i.test(lowerText);
+	// 1) Digit‑based amounts: $1234.56, 1,234.56 dollars, etc.
+	const hasNumericAmount =
+		/\$\s?\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?/.test(lowerText) ||
+		/\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?\s*(?:dollars?|usd|cad|eur|gbp|bucks?)/.test(lowerText);
 
+	// 2) Word‑based amounts
+	const hasWordAmount = WORD_NUM_REGEX.test(lowerText);
+
+	// 3) Transaction verbs
 	const hasKeyword =
-		/\b(spent|paid|bought|sold|received|deposit|income|expense|cost|got|transfer|sent|charge|fee|payment|salary|invoice|refund)\b/i.test(
+		/\b(spent|paid|bought|sold|received|deposit|income|expense|cost|got|transfer|sent|charge|fee|payment|salary|invoice|refund)\b/.test(
 			lowerText
 		);
 
+	// 4) Date indicators: “yesterday”, “apr”, “04/05/2025”, weekday names, etc.
 	const hasDate =
-		/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b|\d{1,2}[\/-]\d{1,2}(?:[\/-]\d{2,4})?|\d{4}|\b(yesterday|today|last week|last month|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i.test(
+		/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b|\d{1,2}[\/-]\d{1,2}(?:[\/-]\d{2,4})?|\d{4}\b|\b(yesterday|today|last week|last month|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/.test(
 			lowerText
 		);
 
-	return hasAmount || (hasKeyword && hasDate);
+	// Heuristic: if we see an amount (numeric or word‑based), we consider it a txn;
+	// otherwise require both a keyword + date.
+	return hasNumericAmount || hasWordAmount || (hasKeyword && hasDate);
 }
 
 export function formatCurrency(amount: number): string {
@@ -62,8 +125,7 @@ export function fixCommonJsonErrors(jsonStr: string): string {
 
 	try {
 		fixed = fixed.replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)(\s*:)/g, '$1"$2"$3');
-
-		fixed = fixed.replace(/^\{\s*([a-zA-Z_][a-zA-Z0-9_]*)(\s*:)/g, '{\"$1\"$2');
+		fixed = fixed.replace(/^\{\s*([a-zA-Z_][a-zA-Z0-9_]*)(\s*:)/, '{"$1"$2');
 	} catch (e) {
 		console.warn('Regex error during key quoting fix:', e);
 	}
@@ -115,7 +177,7 @@ export function applyExplicitDirection(
 				if (updatedTxn.category !== 'Expenses') {
 					updatedTxn.category = 'Expenses';
 				}
-			} else if (explicitDirection === 'in') {
+			} else {
 				if (updatedTxn.category === 'Expenses') {
 					const potentialCategory = categorizeTransaction(updatedTxn.description, updatedTxn.type);
 					updatedTxn.category =

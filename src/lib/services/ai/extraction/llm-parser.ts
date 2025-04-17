@@ -9,157 +9,154 @@ import {
 	LLMTransactionExtractionSchema,
 	type LLMTransactionExtraction
 } from '$lib/schemas/LLMOutputSchema';
-import { TransactionSchema } from '$lib/schemas/TransactionSchema'; // Schema now includes batchId
-import type { Transaction } from '$lib/stores/types'; // Type includes batchId
+import { TransactionSchema } from '$lib/schemas/TransactionSchema';
+import type { Transaction } from '$lib/stores/types';
 import { extractCleanJson } from '../parsers/fixJson';
 
-// fixCommonJsonErrors function remains the same...
-
+/**
+ * Parses LLM JSON output into an array of Transaction objects.
+ * Applies an optional override to the amount based on the original input text.
+ *
+ * @param jsonString The raw JSON string returned by the LLM.
+ * @param batchId    A unique identifier for this extraction batch.
+ * @param originalText Optional: the user input text, used to override the amount if needed.
+ * @returns Array of validated Transaction objects.
+ */
 export function parseTransactionsFromLLMResponse(
 	jsonString: string,
-	batchId: string
+	batchId: string,
+	originalText: string = ''
 ): Transaction[] {
-	console.log(`[LLM Parser] Attempting to parse/validate JSON for batch ${batchId}...`);
-	if (!jsonString || typeof jsonString !== 'string' || jsonString.trim().length === 0) {
-		console.warn('[LLM Parser] Received empty or invalid input string.');
+	console.log(`[LLM Parser] Parsing JSON for batch ${batchId}...`);
+	if (!jsonString || typeof jsonString !== 'string' || !jsonString.trim()) {
+		console.warn('[LLM Parser] Empty or invalid JSON string.');
 		return [];
 	}
 
-	// Harden: Strip everything before the first '{' or '['
-	const firstJsonChar = jsonString.search(/[{\[]/);
-	if (firstJsonChar === -1) {
-		console.warn('[LLM Parser] No JSON start found in string:', jsonString.slice(0, 120));
+	// Strip any leading non-JSON characters
+	const firstChar = jsonString.search(/[\{\[]/);
+	if (firstChar < 0) {
+		console.warn('[LLM Parser] No JSON object/array found.');
 		return [];
 	}
-	const jsonCandidate = jsonString.slice(firstJsonChar).trim();
+	let jsonCandidate = jsonString.slice(firstChar).trim();
 
-	let parsedJson: unknown;
+	// Attempt to parse JSON, with fallback to cleaning utility
+	let parsed: unknown;
 	try {
-		parsedJson = JSON.parse(jsonCandidate);
-	} catch (parseError) {
-		console.warn('[LLM Parser] Initial JSON parse failed. Trying with fixes...');
+		parsed = JSON.parse(jsonCandidate);
+	} catch (e) {
+		console.warn('[LLM Parser] Initial JSON parse failed. Attempting to fix...');
+		const cleaned = extractCleanJson(jsonCandidate);
+		if (!cleaned) {
+			console.error('[LLM Parser] JSON cleaning failed.');
+			return [];
+		}
 		try {
-			const fixedJsonString = extractCleanJson(jsonCandidate);
-			if (fixedJsonString == null) throw new Error('extractCleanJson returned null');
-			parsedJson = JSON.parse(fixedJsonString);
-			console.log('[LLM Parser] Parsed successfully after attempting fixes.');
-		} catch (fixParseError) {
-			console.error('[LLM Parser] Failed to parse JSON even after fixing attempts:', fixParseError);
-			console.error('[LLM Parser] Original problematic JSON string:', jsonString);
+			parsed = JSON.parse(cleaned);
+			console.log('[LLM Parser] JSON parsed after cleaning.');
+		} catch (err) {
+			console.error('[LLM Parser] Failed to parse JSON after cleaning:', err);
 			return [];
 		}
 	}
 
-	const validationResult = LLMTransactionResponseSchema.safeParse(parsedJson);
-
-	if (!validationResult.success) {
-		const arrayValidationResult = z.array(LLMTransactionExtractionSchema).safeParse(parsedJson);
-		if (arrayValidationResult.success) {
-			console.log('[LLM Parser] Validated as direct transaction array.');
-			return convertLLMDataToTransactions(arrayValidationResult.data, batchId);
-		} else {
-			console.error('[LLM Parser] Zod validation failed:', validationResult.error.flatten());
-			console.error('[LLM Parser] Parsed JSON object was:', parsedJson);
+	// Validate against response schema or raw array schema
+	let rawList: LLMTransactionExtraction[];
+	const parsedResp = LLMTransactionResponseSchema.safeParse(parsed);
+	if (parsedResp.success) {
+		rawList = parsedResp.data.transactions;
+		console.log(`[LLM Parser] Validated response schema with ${rawList.length} transactions.`);
+	} else {
+		const arrVal = z.array(LLMTransactionExtractionSchema).safeParse(parsed);
+		if (!arrVal.success) {
+			console.error('[LLM Parser] Validation failed:', parsedResp.error.flatten());
 			return [];
 		}
+		rawList = arrVal.data;
+		console.log(`[LLM Parser] Parsed direct array with ${rawList.length} transactions.`);
 	}
 
-	console.log(
-		`[LLM Parser] Zod validation successful. Found ${validationResult.data.transactions.length} raw transactions.`
-	);
-	return convertLLMDataToTransactions(validationResult.data.transactions, batchId);
+	// Extract first numeric amount from originalText, if present
+	const amtMatch = /\$?\s*(\d+(?:\.\d+)?)/.exec(originalText);
+	const overrideAmt = amtMatch ? parseFloat(amtMatch[1]) : null;
+	if (overrideAmt !== null) {
+		console.log(`[LLM Parser] Detected override amount ${overrideAmt} from input text.`);
+	}
+
+	return convertLLMDataToTransactions(rawList, batchId, overrideAmt);
 }
 
-// --- Add batchId parameter ---
+/**
+ * Converts raw LLM extraction objects into validated Transaction instances.
+ * Applies optional amount override and inference logic.
+ */
 function convertLLMDataToTransactions(
-	rawLLMTransactions: LLMTransactionExtraction[],
-	batchId: string // <-- Added parameter
+	rawTxns: LLMTransactionExtraction[],
+	batchId: string,
+	overrideAmt: number | null
 ): Transaction[] {
-	const validatedTransactions: Transaction[] = [];
+	return rawTxns
+		.map((raw, index) => {
+			try {
+				let date = resolveAndFormatDate(raw.date);
+				let description = raw.description.trim() || 'unknown';
+				let type = raw.type.trim() || 'unknown';
 
-	rawLLMTransactions.forEach((rawTxn, index) => {
-		try {
-			// ... (Data Transformation & Validation for date, desc, type, amount, notes, direction remains the same) ...
-			const date = resolveAndFormatDate(rawTxn.date);
-			const description = rawTxn.description.trim() || 'unknown';
-			const type = rawTxn.type.trim() || 'unknown';
-			const amount = rawTxn.amount;
-			const notes = rawTxn.details?.trim() || '';
-			let direction = rawTxn.direction.toLowerCase() as 'in' | 'out' | 'unknown';
-
-			if (amount <= 0 && description === 'unknown' && date === 'unknown') {
-				console.warn(`[LLM Converter] Skipping raw transaction at index ${index}...`);
-				return;
-			}
-			if (direction === 'unknown') {
-				// ... (direction inference logic remains the same) ...
-				const combinedText = (description + ' ' + type).toLowerCase();
-				if (
-					combinedText.includes('credit') ||
-					combinedText.includes('deposit') ||
-					combinedText.includes('received') ||
-					combinedText.includes('payment from') ||
-					description.toLowerCase().includes('sparkles enterta payroll')
-				) {
-					direction = 'in';
-				} else if (
-					combinedText.includes('debit') ||
-					combinedText.includes('payment') ||
-					combinedText.includes('purchase') ||
-					combinedText.includes('withdrawal') ||
-					combinedText.includes('charge') ||
-					combinedText.includes('bought') ||
-					type.toLowerCase() === 'card' ||
-					type.toLowerCase() === 'atm'
-				) {
-					direction = 'out';
-				} else {
-					console.warn(
-						`[LLM Converter] Could not reliably determine direction for index ${index}...`
-					);
+				// Determine amount, with override if difference > 0.5
+				let amount = raw.amount;
+				if (overrideAmt !== null && Math.abs(amount - overrideAmt) > 0.5) {
+					console.warn(`[LLM Converter] Overriding parsed amount ${amount} with ${overrideAmt}`);
+					amount = overrideAmt;
 				}
-			}
-			let category = categorizeTransaction(description, type);
-			if (direction === 'out' && category === 'Other / Uncategorized') {
-				category = 'Expenses';
-			} else if (direction === 'in' && category === 'Expenses') {
-				category = 'Other / Uncategorized';
-			}
 
-			// --- Create Final Object including the passed batchId ---
-			const finalTxnData: Transaction = {
-				id: uuidv4(), // Generate unique ID for the transaction itself
-				batchId: batchId, // <-- Assign the passed batchId
-				date,
-				description,
-				type,
-				amount,
-				category,
-				notes,
-				direction
-			};
+				let notes = raw.details?.trim() || '';
+				let direction = raw.direction.toLowerCase() as 'in' | 'out' | 'unknown';
 
-			// Final validation against our application's Transaction schema
-			const finalCheck = TransactionSchema.safeParse(finalTxnData); // Schema now includes batchId
-			if (finalCheck.success) {
-				// Use finalCheck.data to ensure validated data is pushed
-				validatedTransactions.push(finalCheck.data);
-			} else {
-				console.warn(
-					`[LLM Converter] Final validation failed for transaction at index ${index}:`,
-					finalCheck.error.flatten()
-				);
-				console.warn('[LLM Converter] Original raw data:', rawTxn);
-				console.warn('[LLM Converter] Converted data before final validation:', finalTxnData);
+				// Infer direction when unknown
+				if (direction === 'unknown') {
+					const txt = (description + ' ' + type).toLowerCase();
+					if (/credit|deposit|received/.test(txt)) {
+						direction = 'in';
+					} else if (/debit|payment|purchase|withdrawal|charge|bought/.test(txt)) {
+						direction = 'out';
+					}
+				}
+
+				// Categorize and adjust based on direction
+				let category = categorizeTransaction(description, type);
+				if (direction === 'out' && category === 'Other / Uncategorized') {
+					category = 'Expenses';
+				} else if (direction === 'in' && category === 'Expenses') {
+					category = 'Other / Uncategorized';
+				}
+
+				const txn: Transaction = {
+					id: uuidv4(),
+					batchId,
+					date,
+					description,
+					type,
+					amount,
+					category,
+					notes,
+					direction
+				};
+
+				// Final schema validation
+				const validated = TransactionSchema.safeParse(txn);
+				if (!validated.success) {
+					console.warn(
+						`[LLM Converter] Transaction failed schema check at index ${index}:`,
+						validated.error.flatten()
+					);
+					return null;
+				}
+				return validated.data;
+			} catch (err) {
+				console.error(`[LLM Converter] Error converting transaction at index ${index}:`, err);
+				return null;
 			}
-		} catch (error) {
-			console.error(`[LLM Converter] Error processing raw transaction at index ${index}:`, error);
-			console.error('[LLM Converter] Raw data was:', rawTxn);
-		}
-	});
-
-	console.log(
-		`[LLM Converter] Successfully converted/validated ${validatedTransactions.length} out of ${rawLLMTransactions.length} raw transactions for batch ${batchId}.`
-	);
-	return validatedTransactions;
+		})
+		.filter((t): t is Transaction => t !== null);
 }

@@ -1,6 +1,27 @@
 // ─────────────────────────  analytics.ts  ─────────────────────────
 import type { Transaction } from '$lib/stores/types';
-
+// at the top of services/analytics.ts
+export interface FinancialSummary {
+	totalIncome: number;
+	totalExpenses: number;
+	netCashflow: number;
+	savingsRate: number;
+	analysis?: string;
+  }
+  export interface Anomaly {
+	index: number;
+	risk: 'low' | 'medium' | 'high';
+	reason: string;
+  }
+  export interface AnomalyResult {
+	anomalies: Anomaly[];
+  }
+  export interface PredictionResult {
+	predictedIncome: number;
+	predictedExpenses: number;
+	reliability: 'none' | 'low' | 'medium' | 'high';
+	message: string;
+  }
 /* ------------------------------------------------------------------
    1)  SUMMARY  ——————————————————————————————————————————————— */
 export function calculateFinancialSummary(txns: Transaction[]) {

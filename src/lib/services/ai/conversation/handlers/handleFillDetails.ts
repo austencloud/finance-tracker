@@ -6,7 +6,7 @@ import { appStore } from '$lib/stores/AppStore'; // *** Import central appStore 
 // import { conversationStore } from '../conversationStore';
 
 // --- Keep other necessary imports ---
-import { llmChat, getLLMFallbackResponse } from '../../llm';
+import { llmChat, getLLMFallbackResponse } from '../../llm-helpers';
 import { getExtractionPrompt, getSystemPrompt } from '../../prompts'; // May need specific prompts
 import {
 	// applyExplicitDirection, // Not used in placeholder

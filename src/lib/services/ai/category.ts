@@ -2,7 +2,7 @@
 
 import { getCategorySuggestionPrompt } from './prompts';
 // --- UPDATED IMPORT ---
-import { llmChat, getLLMFallbackResponse } from './llm'; // Use abstraction layer
+import { llmChat, getLLMFallbackResponse } from './llm-helpers'; // Use abstraction layer
 // --- END UPDATE ---
 import type { Category, Transaction } from '$lib/stores/types';
 

@@ -1,28 +1,30 @@
-// fixJson.ts – zero‑dependency helper
+/**
+ * Attempts to salvage almost‑JSON coming from the LLM.
+ *  – trims leading / trailing junk
+ *  – removes dangling commas  ,]
+ *  – keeps trying until a valid JSON string is produced or returns null
+ */
 export function extractCleanJson(raw: string): string | null {
-	// 1  If the model fenced the JSON, prefer that.
-	const fence = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-	const body = fence ? fence[1] : raw;
+    if (!raw) return null;
 
-	// 2  Cut everything before the FIRST “{” or “[”
-	const start = body.search(/[{[]/);
-	if (start === -1) return null;
+    // 1. keep only the outer‑most {...}
+    const start = raw.indexOf('{');
+    const end   = raw.lastIndexOf('}');
+    if (start === -1 || end === -1 || end <= start) return null;
 
-	// 3  Cut everything AFTER the matching closing brace/bracket.
-	//     We walk the string once, counting brackets – O(n) but tiny.
-	let depth = 0,
-		end = -1;
-	for (let i = start; i < body.length; i++) {
-		if (body[i] === '{' || body[i] === '[') depth++;
-		if (body[i] === '}' || body[i] === ']') {
-			depth--;
-			if (depth === 0) {
-				end = i + 1;
-				break;
-			}
-		}
-	}
-	if (end === -1) return null;
+    let candidate = raw.slice(start, end + 1);
 
-	return body.slice(start, end);
+    // 2. kill BOM / strange characters
+    candidate = candidate.replace(/^\uFEFF/, '');
+
+    // 3. **NEW** – remove any comma before ] or }
+    candidate = candidate.replace(/,\s*([}\]])/g, '$1');
+
+    // 4. final sanity check
+    try {
+        JSON.parse(candidate);
+        return candidate;
+    } catch {
+        return null;
+    }
 }

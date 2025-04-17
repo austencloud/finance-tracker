@@ -21,7 +21,7 @@ import type { Transaction } from '$lib/stores/types';
 
 // Helper Functions
 import { parseJsonFromAiResponse, applyExplicitDirection } from '$lib/utils/helpers';
-import { getLLMFallbackResponse, llmChat } from '../../llm';
+import { getLLMFallbackResponse, llmChat } from '../../llm-helpers';
 
 // --- Main Handler Function ---
 

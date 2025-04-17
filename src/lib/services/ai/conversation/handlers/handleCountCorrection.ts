@@ -1,7 +1,7 @@
 import { get } from 'svelte/store';
 import { appStore } from '$lib/stores/AppStore';
 
-import { getLLMFallbackResponse, llmChat } from '../../llm';
+import { getLLMFallbackResponse, llmChat } from '../../llm-helpers';
 import { getSystemPrompt } from '../../prompts';
 
 import { parseTransactionsFromLLMResponse } from '../../extraction/llm-parser';

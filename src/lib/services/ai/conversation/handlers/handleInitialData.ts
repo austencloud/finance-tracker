@@ -5,7 +5,7 @@ import { get } from 'svelte/store';
 import { v4 as uuidv4 } from 'uuid';
 import type { Transaction, ConversationMessage } from '$lib/stores/types';
 
-import { llmChat, getLLMFallbackResponse } from '../../llm';
+import { llmChat, getLLMFallbackResponse } from '../../llm-helpers';
 import { getSystemPrompt, getExtractionPrompt } from '../../prompts';
 import { textLooksLikeTransaction, applyExplicitDirection } from '$lib/utils/helpers';
 import { BULK_DATA_THRESHOLD_LENGTH } from '../constants'; // Assuming this constant exists
@@ -137,11 +137,12 @@ export async function handleInitialData(
 		console.log('[InitialDataHandler] Adding transactions:', JSON.stringify(finalTransactions));
 		// Add the valid transactions to the main store state
 		appStore.addTransactions(finalTransactions);
-
-		// Generate confirmation message and add directly
-		const confirmationMsg = `Okay, I've extracted ${finalTransactions.length} transaction(s) and added them to the list. You can review them now or ask me to make corrections.`;
-		appStore.addConversationMessage('assistant', confirmationMsg);
+		const confirmationMsg =
+			`Okay, I've extracted ${finalTransactions.length} transaction(s) and added them to the list. ` +
+			`You can review them now or ask me to make corrections.`;
 		appStore.setConversationStatus('Initial extraction complete', 100);
+		// Generate confirmation message and add directly
+		appStore.addConversationMessage('assistant', confirmationMsg);
 
 		// Set context for potential corrections
 		appStore._setConversationInternalState({

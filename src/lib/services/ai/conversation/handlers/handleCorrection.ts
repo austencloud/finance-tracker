@@ -4,9 +4,9 @@ import { get } from 'svelte/store';
 import { appStore } from '$lib/stores/AppStore';
 import type { Transaction, Category, AppState } from '$lib/stores/types'; // Import AppState for type hint
 import { resolveAndFormatDate } from '$lib/utils/date';
-import { llmGenerateJson, getLLMFallbackResponse } from '../../llm'; // Fixed import names
+import { llmGenerateJson, getLLMFallbackResponse } from '../../llm-helpers'; // Fixed import names
 import { getCorrectionParsingPrompt } from '../../prompts';
-import { parseJsonFromAiResponse } from '$lib/utils/helpers';
+import { parseJsonFromAiResponse, textLooksLikeTransaction } from '$lib/utils/helpers';
 
 // Define expected structure from LLM response
 interface CorrectionParseResult {
@@ -14,11 +14,29 @@ interface CorrectionParseResult {
 	target_field?: 'amount' | 'date' | 'description' | 'category' | 'unknown'; // Extend later
 	new_value?: string | number | null;
 }
-
+function looksLikeCorrection(text: string): boolean {
+	// crude keywords – tune for your domain
+	const kw = [
+		'correction',
+		'actually',
+		'sorry',
+		'wrong',
+		'should be',
+		'wasnt',
+		'missed',
+		'replace',
+		'instead'
+	];
+	const lower = text.toLowerCase();
+	return kw.some((k) => lower.includes(k));
+}
 export async function handleCorrection(
 	message: string,
 	explicitDirectionIntent: 'in' | 'out' | null // Keep signature consistent
 ): Promise<{ handled: boolean; response?: string }> {
+	if (textLooksLikeTransaction(message) || !looksLikeCorrection(message)) {
+		return { handled: false };
+	}
 	const lowerMessage = message.toLowerCase().trim();
 
 	// --- 1. Check Context ---

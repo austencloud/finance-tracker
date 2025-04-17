@@ -8,7 +8,7 @@
 	// Import services (assuming they use appStore internally)
 	import { parseTransactionData, getSampleData } from '$lib/services/parser';
 	import { processBulkTransactions } from '$lib/services/bulkProcessingOrchestrator';
-	import { isLLMAvailable } from '$lib/services/ai/llm';
+	import { isLLMAvailable } from '$lib/services/ai/llm-helpers';
 	import { v4 as uuidv4 } from 'uuid';
 
 	// Import types

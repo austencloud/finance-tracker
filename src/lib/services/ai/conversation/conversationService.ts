@@ -7,7 +7,7 @@ import { appStore } from '$lib/stores/AppStore';
 import type { Transaction } from '$lib/stores/types';
 
 // LLM plumbing
-import { llmChat } from '$lib/services/ai/llm';
+import { llmChat } from '$lib/services/ai/llm-helpers';
 import { OllamaApiError } from '$lib/services/ai/ollama-client';
 
 // Prompt builders & helpers
@@ -43,16 +43,14 @@ function startProcessing(message: string): void {
 	appStore.setConversationStatus('Thinking…', 10);
 }
 
-function finishProcessing(assistantResponse: string): void {
-	const finalResponse = assistantResponse?.trim() ?? '';
-
-	if (finalResponse) {
+function finishProcessing(assistantResponse: string | undefined): void {
+	const finalResponse = assistantResponse?.trim();
+	if (finalResponse && finalResponse.length > 0) {
 		appStore.addConversationMessage('assistant', finalResponse);
-	} else {
-		console.warn('[finishProcessing] No assistant response content provided.');
 	}
 
 	appStore.setConversationStatus('Finished', 100);
+
 	setTimeout(() => {
 		appStore.setConversationProcessing(false);
 		if (get(appStore).conversation.status === 'Finished') {
@@ -107,7 +105,6 @@ export async function sendMessage(message: string): Promise<void> {
 		explicitDirectionIntent = 'out';
 
 	const handlers = [
-		handleMood,
 		handleDirectionClarification,
 		handleCountCorrection,
 		handleBulkDirectionCorrection,
@@ -115,7 +112,8 @@ export async function sendMessage(message: string): Promise<void> {
 		handleCorrection,
 		handleInitialData,
 		handleExtraction,
-		handleNormalResponse
+		handleNormalResponse,
+		handleMood
 	];
 
 	let assistantResponse = '';

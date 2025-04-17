@@ -13,12 +13,12 @@ let activeModel = OLLAMA_CONFIG.model;
  */
 export function setOllamaModel(modelName: string): void {
 	const next = (modelName ?? '').trim();
-	if (!next) return;                         // safeguard
-	if (next === activeModel) return;          // <─ early‑exit (key change)
-  
+	if (!next) return; // safeguard
+	if (next === activeModel) return; // <─ early‑exit (key change)
+
 	console.log(`[setOllamaModel] Changing active model from ${activeModel} to ${next}`);
 	activeModel = next;
-  }
+}
 
 /**
  * Gets the currently active Ollama model name
@@ -130,11 +130,7 @@ export async function isOllamaAvailable(opts: { timeout?: number } = {}): Promis
 		clearTimeout(timer);
 	}
 }
-function pickModel(prompt: string, opts?: { forceHeavy?: boolean }): string {
-	const tokenEstimate = Math.ceil(prompt.length / 4);
-	if (opts?.forceHeavy || tokenEstimate > 300) return HEAVY_MODEL;
-	return STANDARD_MODEL;
-}
+
 /**
  * Sends messages to the Ollama Chat API endpoint.
  * @param messages - Array of messages for the chat context.
@@ -232,7 +228,10 @@ export async function ollamaChat(
 		}
 
 		const data = await response.json();
-
+		if (data && typeof data?.message?.content === 'string') {
+			console.debug('[ollamaChat] ↩︎ response ok (chars:', data.message.content.length, ')');
+			return data.message.content;
+		}
 		// Handle Ollama's response structure
 		if (data && data.message && typeof data.message.content === 'string') {
 			console.log('[ollamaChat] Received successful response from Ollama.');

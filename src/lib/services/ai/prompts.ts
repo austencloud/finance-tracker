@@ -5,8 +5,7 @@ import { formatCurrency } from '$lib/utils/currency';
 /**
  * Get the system message for the conversation, including today's date.
  * @param todayDateString - Today's date in 'YYYY-MM-DD' format.
- */// src/lib/services/ai/prompts.ts
-
+ */ // src/lib/services/ai/prompts.ts
 
 // Keep existing getSystemPrompt, getExtractionPrompt, getOptimizedExtractionPrompt, getSummaryPrompt, getCategorySuggestionPrompt
 
@@ -20,13 +19,12 @@ import { formatCurrency } from '$lib/utils/currency';
  * @returns The prompt string for the LLM.
  */
 export function getCorrectionParsingPrompt(
-    userCorrectionMessage: string,
-    targetTransaction: Transaction,
-    availableCategories: readonly Category[] // Use readonly for safety
+	userCorrectionMessage: string,
+	targetTransaction: Transaction,
+	availableCategories: readonly Category[] // Use readonly for safety
 ): string {
-
-    // Format transaction details for the prompt context
-    const transactionContext = `
+	// Format transaction details for the prompt context
+	const transactionContext = `
 Transaction Details to Correct:
 - ID: ${targetTransaction.id}
 - Date: ${targetTransaction.date}
@@ -38,11 +36,11 @@ Transaction Details to Correct:
 - Notes: ${targetTransaction.notes || '(none)'}
     `.trim();
 
-    // Define the valid fields the user can correct
-    const validFields = "'amount', 'date', 'description', 'category'"; // Add 'type', 'notes' later if needed
+	// Define the valid fields the user can correct
+	const validFields = "'amount', 'date', 'description', 'category'"; // Add 'type', 'notes' later if needed
 
-    // Define the expected JSON output structure
-    const jsonStructure = `
+	// Define the expected JSON output structure
+	const jsonStructure = `
 {
   "correction_possible": boolean, // true if the user message seems like a correction request, false otherwise
   "target_field": string, // ONE of ${validFields} or 'unknown' if the field isn't clear
@@ -50,7 +48,7 @@ Transaction Details to Correct:
 }
     `.trim();
 
-    return `
+	return `
 You are a precise assistant helping to correct transaction details.
 The user is likely trying to correct the following transaction:
 
@@ -150,7 +148,6 @@ Output JSON:
     `.trim();
 }
 
-
 export function getSystemPrompt(todayDateString: string): string {
 	// System prompt content remains the same...
 	return `You are a friendly, attentive, and highly capable financial assistant. Your primary goal is to extract and organize transaction data (Date, Description, Amount, Type, Direction IN/OUT) from user input through natural conversation.
@@ -195,54 +192,29 @@ export function getSystemPrompt(todayDateString: string): string {
 /**
  * General prompt for extracting transactions from text, including today's date context.
  * Enhanced to better handle multiple transactions and relative dates.
- */
-export function getExtractionPrompt(text: string, todayDateString: string): string {
-	// Extraction prompt content remains the same...
-	return `Carefully analyze the following text and extract ALL possible financial transactions, even if there are multiple transactions or the information is incomplete.
-    (For context, today's date is ${todayDateString})
-
-    Text to Analyze:
-    "${text}"
-
-    Create a separate transaction object for EACH distinct transaction mentioned. Be thorough and don't miss any transactions, even if they're mentioned briefly. Resolve relative dates like "today," "yesterday," "last monday," "last week," "last month," etc. to 'YYYY-MM-DD' format based on today being ${todayDateString}.
-
-    Required JSON fields for each transaction:
-    1. date: (String) Specific date "YYYY-MM-DD" or "unknown" if unresolvable.
-    2. description: (String) What the transaction was for (merchant, person, service, item purchased) or "unknown". Be specific (e.g., "Target" not "groceries").
-    3. details: (String) Any additional context provided (e.g., "for birthday", "invoice #123") - empty string "" if none.
-    4. type: (String) Best guess of transaction type ("Card", "Cash", "Check", "Transfer", "PayPal", "Zelle", "ACH", "Deposit", "Withdrawal", etc.) or "unknown".
-    5. amount: (Number) The numeric dollar amount without currency symbol (e.g., 20.00 not $20.00). Must be greater than 0. Use 0 only if amount is truly unknown.
-    6. direction: (String) "in" for received money (income, deposit, credit), "out" for spent/paid money (expense, debit, withdrawal). **If the direction cannot be reliably determined from keywords or context, set this field to the literal string "unknown". Do NOT guess.**
-
-    EXAMPLE 1:
-    Input: "I spent $20 at Target yesterday and received $50 from Mom last week for my birthday" (assuming today is 2025-04-14)
-
-    Output JSON:
-    {
-      "transactions":
-    }
-
-    EXAMPLE 2 (Bank Statement Snippet):
-    Input:
-    Apr 12, 2025
-    PAYPAL TRANSFER PPD ID: PAYPALSD11
-    ACH credit
-    $599.52
-
-    Output JSON:
-     {
-      "transactions":
-    }
-
-    EXAMPLE 3 (Ambiguous):
-    Input: "Transaction $50 on 4/10/25"
-    Output JSON:
-     {
-      "transactions":
-     }
-
-
-    CRITICAL INSTRUCTION: Your response MUST BEGIN IMMEDIATELY with the opening brace '{' of the JSON object. DO NOT include ANY explanatory text, thinking, preamble, or markdown code blocks. Just the raw JSON. If you add ANY text before the JSON object, it will cause parsing errors.`;
+ */ export function getExtractionPrompt(text: string, todayDateString: string): string {
+	return `
+  Extract transactions from the user’s input.  
+  **Convert any spelled‑out amounts (e.g. “twenty bucks”) into numeric dollars (e.g. 20.00).**  
+  **When you fill in the “description” field, please capitalize it in Title Case (e.g. “Whole Foods”, “Online Gig Payment”). You can let articles or simple word like "a", "the", "and", "for", etc. be uncapitalized, whatever seems to make the most aesthetic sense for you.**  
+  Preserve dates as YYYY‑MM‑DD or sensible relative terms.  
+  Just output valid JSON: an array of objects with keys { date, description, amount, direction, type, details }.
+  
+  Text to Analyze:
+  "${text}"
+  
+  Create a separate transaction object for EACH distinct transaction mentioned. Be thorough and don't miss any transactions, even if they're mentioned briefly. Resolve relative dates like "today," "yesterday," "last monday," "last week," "last month," etc. to 'YYYY-MM-DD' format based on today being ${todayDateString}.
+  
+  Required JSON fields for each transaction:
+  1. date: (String) Specific date "YYYY-MM-DD" or "unknown" if unresolvable.
+  2. description: (String) What the transaction was for (merchant, person, service, item purchased) or "unknown". Be specific (e.g., "Target" not "groceries").
+  3. details: (String) Any additional context provided (e.g., "for birthday", "invoice #123") - empty string "" if none.
+  4. type: (String) Best guess of transaction type ("Card", "Cash", "Check", "Transfer", "PayPal", "Zelle", "ACH", "Deposit", "Withdrawal", etc.) or "unknown".
+  5. amount: (Number) The numeric dollar amount without currency symbol (e.g., 20.00 not $20.00). Must be greater than 0. Use 0 only if amount is truly unknown.
+  6. direction: (String) "in" for received money (income, deposit, credit), "out" for spent/paid money (expense, debit, withdrawal). **If the direction cannot be reliably determined from keywords or context, set this field to the literal string "unknown". Do NOT guess.**
+  
+  CRITICAL INSTRUCTION: Your response MUST BEGIN IMMEDIATELY with the opening bracket '[' of the JSON array. DO NOT include ANY explanatory text, thinking, preamble, or markdown code blocks. Just the raw JSON. If you add ANY text before the JSON array, it will cause parsing errors.
+  `.trim();
 }
 
 /**

@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { Transaction } from '$lib/stores/types';
 
 // --- UPDATED IMPORT: Use abstraction layer ---
-import { llmChat } from './ai/llm';
+import { llmChat } from './ai/llm-helpers';
 // --- END UPDATE ---
 
 // Import prompts and helpers (remain the same)

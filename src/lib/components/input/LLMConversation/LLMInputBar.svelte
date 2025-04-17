@@ -1,26 +1,21 @@
 <script lang="ts">
 	import { get } from 'svelte/store';
 	import { onDestroy } from 'svelte';
-
-	// Import service functions
-	import {
-		sendMessage,
-		// generateSummary, // Removed - No longer triggered here
-		// completeAndClear, // Removed - Obsolete
-		abortAndClear // Service needs internal refactoring
-	} from '$lib/services/ai/conversation/conversationService';
-
-	// Import appStore directly
+	import { sendMessage, abortAndClear } from '$lib/services/ai/conversation/conversationService';
 	import { appStore } from '$lib/stores/AppStore';
 
-	// Transaction type import likely not needed here anymore
-	// import type { Transaction } from '$lib/stores/types';
+	// NEW: import our low‑level chat helper and prompt builder
+	import { llmChat, makeSystemMsg, makeUserMsg } from '$lib/services/ai/llm-helpers';
+	import { getSystemPrompt } from '$lib/services/ai/prompts';
 
 	let userInput = '';
 	let submitTimeoutId: ReturnType<typeof setTimeout> | null = null;
 	let isSubmitting = false;
 
-	// Starter response templates
+	let showStarterPanel = false;
+	$: isProcessingValue = $appStore.conversation.isProcessing;
+
+	// existing starter templates
 	const starterResponses = [
 		{ label: '💰 Income', text: 'I got paid $1,500 from my job on April 12' },
 		{ label: '💸 Expense', text: 'I spent $42.50 at the grocery store yesterday' },
@@ -31,22 +26,14 @@
 		{ label: '❓ Question', text: 'What was my total income so far?' }
 	];
 
-	// Show/hide the starter response panel
-	let showStarterPanel = false;
-
-	// Function to use a starter response
 	function useStarterResponse(text: string) {
 		userInput = text;
-		showStarterPanel = false; // Hide panel after selection
-		// Automatically send the message
+		showStarterPanel = false;
 		setTimeout(() => debounceSubmit(), 0);
 	}
 
 	function debounceSubmit() {
-		if (isSubmitting) {
-			console.log('[LLMInputBar] Debounce: Submit already in progress.');
-			return;
-		}
+		if (isSubmitting) return;
 		isSubmitting = true;
 		handleSubmit();
 		submitTimeoutId = setTimeout(() => {
@@ -54,39 +41,27 @@
 		}, 300);
 	}
 
-	// Function to toggle starter panel visibility
 	function toggleStarterPanel() {
 		showStarterPanel = !showStarterPanel;
 	}
 
 	function handleSubmit() {
 		const currentInput = userInput.trim();
-		// Read isProcessing directly from appStore state
-		const processing = get(appStore).conversation.isProcessing;
-		if (!currentInput || processing) {
-			// console.warn('[LLMInputBar] Submit ignored: Input empty or AI processing.');
-			isSubmitting = false; // Reset flag if submit is blocked
+		if (!currentInput || get(appStore).conversation.isProcessing) {
+			isSubmitting = false;
 			if (submitTimeoutId) clearTimeout(submitTimeoutId);
 			return;
 		}
-		sendMessage(currentInput); // Service handles adding/updating appStore.transactions
+		sendMessage(currentInput);
 		userInput = '';
-		showStarterPanel = false; // Hide panel after submission
-		// isSubmitting will be reset by the timeout or if processing starts
+		showStarterPanel = false;
 	}
 
-	// --- REMOVED handleComplete function ---
-
-	// --- REMOVED requestSummary function ---
-
-	// handleCancel function calls abortAndClear service
-	// Note: abortAndClear service itself needs refactoring internally
-	// to only clear messages/state, not extractedTransactions.
-	function handleCancel() {
+	async function handleCancel() {
 		abortAndClear();
 		userInput = '';
 		isSubmitting = false;
-		showStarterPanel = false; // Hide panel after clearing
+		showStarterPanel = false;
 		if (submitTimeoutId) clearTimeout(submitTimeoutId);
 	}
 
@@ -94,28 +69,88 @@
 		if (submitTimeoutId) clearTimeout(submitTimeoutId);
 	});
 
-	// --- REMOVED extractedCount reactive variable ---
+	// ────────────────────────────────────────────────────────────
+	// NEW: scenario selector for example generation
+	let exampleScenario: '' | 'income' | 'expense' | 'transfer' | 'multi' = '';
+	const scenarioOptions = [
+		{ label: 'Random', value: '' },
+		{ label: 'Income', value: 'income' },
+		{ label: 'Expense', value: 'expense' },
+		{ label: 'Transfer', value: 'transfer' },
+		{ label: 'Multiple', value: 'multi' }
+	];
 
-	// Keep isProcessingValue for disabling input/button
-	$: isProcessingValue = $appStore.conversation.isProcessing;
+	const scenarioDescriptions: Record<string, string> = {
+		income: 'a salary or other income',
+		expense: 'an everyday purchase or bill payment',
+		transfer: 'a peer-to-peer or bank transfer',
+		multi: 'multiple transactions in one input'
+	};
+
+	// NEW: generate multiple examples and pick one randomly
+	async function generateExample(level: 1 | 2 | 3) {
+		const today = new Date().toISOString().split('T')[0];
+		const system = getSystemPrompt(today);
+		const prompt = `
+	Generate a single user-style transaction input example at CLARITY LEVEL ${level}.
+	Level 1: extremely simple and direct (e.g. "Paid $20 for lunch.", "Got $100.", "Spent €15.", "Received £200.", "Bought coffee for $4.", "Salary $1500.", "Rent $800.")
+	Level 2: moderately clear (e.g. "Yesterday I got my paycheck, about $1,500.", "Spent around €40 at the store last night.", "Got some cash from a friend, maybe £50.", "Paid the rent, $800, earlier this month.")
+	Level 3: obtuse or roundabout (e.g. "Well, the job kicked in some funds mid-month, ballpark fifteen-hundred.", "Money came in for something I did last week.", "Dropped some cash at the market, not sure how much.", "A little something from a side gig showed up.")
+	Vary the type of transaction (income, expense, transfer, refund, split bill, etc.), the
+	amounts, the payees/payers, the currencies, the locations, the payment methods (cash,
+	card, PayPal, Venmo, crypto, etc.), and the dates. Use different phrasings, personal
+	tones, and contexts (work, travel, gifts, bills, shopping, entertainment, etc.).
+	Sometimes use slang, abbreviations, or regional expressions. Just output that one line,
+	no explanation. Don't include anything like "Here's a Level 2 transaction input
+	example:", just get straight to the response.
+`;
+		try {
+			const aiResponse = await llmChat([makeSystemMsg(system), makeUserMsg(prompt)], {
+				temperature: 0.8,
+				forceSimple: true,
+				rawUserText: ''
+			});
+			const example = aiResponse.split('\n')[0].trim().replace(/^"|"$/g, '');
+			userInput = example;
+			setTimeout(() => debounceSubmit(), 0);
+		} catch (err) {
+			console.error('Failed to generate example:', err);
+		}
+	}
+	// ────────────────────────────────────────────────────────────
 </script>
 
 <div class="input-container">
 	<form on:submit|preventDefault>
 		{#if showStarterPanel}
 			<div class="starter-panel">
-				{#each starterResponses as response}
-					<button
-						type="button"
-						class="starter-button"
-						on:click={() => useStarterResponse(response.text)}
-						disabled={isProcessingValue || isSubmitting}
-					>
-						{response.label}
-					</button>
-				{/each}
+				<button
+					type="button"
+					class="starter-button"
+					on:click={() => generateExample(1)}
+					disabled={isProcessingValue || isSubmitting}
+				>
+					Level 1 Example
+				</button>
+				<button
+					type="button"
+					class="starter-button"
+					on:click={() => generateExample(2)}
+					disabled={isProcessingValue || isSubmitting}
+				>
+					Level 2 Example
+				</button>
+				<button
+					type="button"
+					class="starter-button"
+					on:click={() => generateExample(3)}
+					disabled={isProcessingValue || isSubmitting}
+				>
+					Level 3 Example
+				</button>
 			</div>
 		{/if}
+
 		<textarea
 			bind:value={userInput}
 			placeholder="Describe transactions or ask questions..."
@@ -129,19 +164,18 @@
 			}}
 			disabled={isProcessingValue || isSubmitting}
 		></textarea>
+
 		<div class="button-container">
-			<!-- Starter response toggle button -->
 			<button
 				type="button"
 				class="starter-toggle-button"
-				title="Show starter templates"
+				title="Show templates & examples"
 				on:click={toggleStarterPanel}
 				disabled={isProcessingValue || isSubmitting}
 			>
 				{showStarterPanel ? 'Hide Templates' : 'Templates'}
 			</button>
 
-			<!-- Removed action-buttons div and Summary/Complete buttons -->
 			<button
 				type="button"
 				class="cancel-button"
@@ -149,7 +183,7 @@
 				on:click={handleCancel}
 				disabled={isProcessingValue || isSubmitting}
 			>
-				Clear Chat
+				Clear Chat
 			</button>
 
 			<button
