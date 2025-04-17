@@ -40,10 +40,10 @@
 	});
 
 	// Handler for report generation
-	function handleGenerateReport() {
+	async function handleGenerateReport() {
 		const currentTransactions = get(appStore).transactions;
 		const currentCategories = get(appStore).categories;
-		const currentTotals = appStore.getCategoryTotals();
+		const currentTotals = await appStore.getCategoryTotals();
 		generateHTMLReport(currentTransactions, currentTotals, currentCategories);
 	}
 </script>

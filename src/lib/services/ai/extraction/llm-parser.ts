@@ -25,14 +25,10 @@ import { extractCleanJson } from '$lib/utils/helpers';
 export function parseTransactionsFromLLMResponse(raw: string, batchId: string): Transaction[] {
 	// 1) try to strip markdown fences
 	let jsonText = raw.trim().replace(/^```json\s*|\s*```$/gi, '');
-
-	// 2) feed through our cleaner
 	const cleaned = extractCleanJson(jsonText);
 	if (cleaned) {
 		jsonText = cleaned;
 	}
-
-	// 3) final parse
 	let parsed: any;
 	try {
 		parsed = JSON.parse(jsonText);
@@ -51,13 +47,17 @@ export function parseTransactionsFromLLMResponse(raw: string, batchId: string): 
 	return arr.map((o) => ({
 		id: o.id || uuidv4(),
 		batchId,
-		date: o.date ?? 'unknown',
+		// *** Use the resolver function here ***
+		date: resolveAndFormatDate(o.date), // Ensures date is either YYYY-MM-DD or today's date
 		description: o.description ?? 'unknown',
 		type: o.type ?? 'unknown',
 		amount: typeof o.amount === 'number' ? o.amount : parseFloat(o.amount) || 0,
-		currency: o.currency ?? 'USD', // <-- EXTRACT CURRENCY, default to USD
+		currency: o.currency?.toUpperCase() ?? 'USD', // Keep currency handling
+		// Ensure category logic is appropriate (maybe move to AppStore.addTransactions?)
 		category: o.category ?? 'Other / Uncategorized',
 		notes: o.details ?? '',
 		direction: o.direction ?? 'unknown'
+		// Add needs_clarification if you implemented that logic
+		// needs_clarification: o.needs_clarification ?? null,
 	}));
 }

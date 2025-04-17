@@ -1,53 +1,72 @@
 <script lang="ts">
-	// Import the central application store
 	import { appStore } from '$lib/stores/AppStore';
 	import type { CategoryTotals } from '$lib/stores/types';
-	// Import the type definition for CategoryTotals for better type checking
+	import { formatCurrency } from '$lib/utils/helpers'; // Import formatter
+	import { BASE_CURRENCY } from '$lib/config/constants'; // Import base currency
 
-	// Declare a local variable to hold the category totals
-	let totals: CategoryTotals = {};
+	// Remove reactive statement: let totals: CategoryTotals = {};
+	// Remove reactive statement: $: totals = appStore.getCategoryTotals();
 
-	// Use a Svelte reactive declaration ($:)
-	// This will automatically call appStore.getCategoryTotals() whenever
-	// the appStore notifies its subscribers of an update (e.g., when transactions change).
-	// The result is assigned to the local 'totals' variable, triggering UI updates.
-	$: totals = appStore.getCategoryTotals();
+	// Call the async function directly for the await block
+	let totalsPromise = appStore.getCategoryTotals(); // This is now a Promise
 
+	// Re-run when transactions change
+	$: if ($appStore.transactions) {
+		totalsPromise = appStore.getCategoryTotals();
+	}
 </script>
 
-{#if Object.keys(totals).length > 0}
+{#await totalsPromise}
 	<div class="category-totals">
 		<h3>Category Totals</h3>
-		<table>
-			<thead>
-				<tr>
-					<th>Category</th>
-					<th class="amount">Total</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each Object.entries(totals) as [category, total]}
-					{#if total !== 0}
-						<tr>
-							<td>{category}</td>
-							<td class="amount {category === 'Expenses' ? 'expense-amount' : 'income-amount'}">
-								${Math.abs(total).toFixed(2)}
-							</td>
-						</tr>
-					{/if}
-				{/each}
-				<tr class="grand-total">
-					<td>Grand Total</td>
-					<td class="amount">
-						${Object.values(totals)
-							.reduce((sum, val) => sum + val, 0)
-							.toFixed(2)}
-					</td>
-				</tr>
-			</tbody>
-		</table>
+		<p>Calculating totals...</p>
 	</div>
-{/if}
+{:then totals}
+	{#if totals && Object.keys(totals).filter((k) => totals[k] !== 0).length > 0}
+		<div class="category-totals">
+			<h3>Category Totals ({BASE_CURRENCY} Equivalent)</h3>
+			<table>
+				<thead>
+					<tr>
+						<th>Category</th>
+						<th class="amount">Total</th>
+					</tr>
+				</thead>
+				<tbody>
+					{#each Object.entries(totals) as [category, total]}
+						{#if total !== 0}
+							<tr>
+								<td>{category}</td>
+								<td class="amount {total < 0 ? 'expense-amount' : 'income-amount'}">
+									{formatCurrency(Math.abs(total), BASE_CURRENCY)}
+								</td>
+							</tr>
+						{/if}
+					{/each}
+					<tr class="grand-total">
+						<td>Grand Total</td>
+						<td class="amount">
+							{formatCurrency(
+								Object.values(totals).reduce((sum, val) => sum + val, 0),
+								BASE_CURRENCY
+							)}
+						</td>
+					</tr>
+				</tbody>
+			</table>
+		</div>
+	{:else}
+		<div class="category-totals">
+			<h3>Category Totals</h3>
+			<p>No category totals to display.</p>
+		</div>
+	{/if}
+{:catch error}
+	<div class="category-totals error">
+		<h3>Category Totals</h3>
+		<p>Error calculating totals: {error.message}</p>
+	</div>
+{/await}
 
 <style>
 	/* Styling for the category totals container */
@@ -59,7 +78,13 @@
 		border: 1px solid #e9ecef; /* Subtle border */
 		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05); /* Subtle shadow */
 	}
-
+	.category-totals p {
+		padding: 10px;
+	}
+	.category-totals.error {
+		border-left: 4px solid #e74c3c;
+		background-color: #fdedec;
+	}
 	/* Styling for the heading */
 	h3 {
 		margin-top: 0;

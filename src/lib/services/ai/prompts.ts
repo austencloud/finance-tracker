@@ -191,8 +191,8 @@ It is NOT correct to extract a transaction or add it to the list yet, because we
 A poor response would be:  
 "Okay, I've extracted 1 transaction(s) and added them to the list. You can review them now or ask me to make corrections."  
 This is incorrect because the user's share is unknown.  
-**Instead, you must ask:**  
-"How many people split the bill, and how much did you pay?"
+**Instead, you must ask in your own way:**  
+"What was your specific share?"
 
 **CRITICAL BEHAVIORS:**
 1. **Extract ALL Transactions Mentioned:** When the user mentions multiple transactions in one message (e.g., "I spent $20 at Target yesterday and $50 at Amazon today"), extract and confirm ALL transactions, not just the first one.
@@ -289,7 +289,7 @@ Example 1:
 Input: "I split a $25 bill with some friends at the movie theater last night."
 Output:
 []
-Follow-up: How many people split that $25 bill, and how much were you responsible for?
+Follow-up: How much were you responsible for?
 
 Example 2:
 Input: "I split a $60 dinner with 3 friends, and my share was $15."
@@ -352,13 +352,14 @@ Output ONLY valid JSON **and nothing else**, starting immediately with the ` +
 		` of the array.
 
 Required JSON fields for each transaction:
-1. date: (String) “YYYY-MM-DD” or “unknown”.
+1. date: (String) You **MUST** resolve relative dates (like 'today', 'yesterday', 'last Friday') to a specific **'YYYY-MM-DD'** format based on today being ${todayDateString}. If no date information is present or it cannot be determined, output the literal string **"unknown"**. Do NOT output the placeholder string 'YYYY-MM-DD'.
 2. description: (String) What the transaction was for... **Use Title Case**...
 3. details: (String) Extra context... or "".
 4. type: (String) Best guess... or “unknown”.
 5. amount: (Number) Numeric amount. **Do NOT include symbols or perform conversions.** Must be > 0.
 6. currency: (String) **The ISO 4217 currency code (e.g., "USD", "JPY", "EUR"). Assume "USD" if not specified in the text.**
 7. direction: (String) “in” for money received, “out” for money spent. If unclear, “unknown”.
+
 
 Create a separate transaction object for EACH distinct transaction mentioned. Be thorough—even brief mentions count. Resolve relative dates like “today”, “yesterday”, “last Monday” etc. to “YYYY-MM-DD” based on today being ${todayDateString}.
 

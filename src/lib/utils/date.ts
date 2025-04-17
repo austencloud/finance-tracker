@@ -2,38 +2,73 @@
 import * as chrono from 'chrono-node';
 
 /**
- * Formats a date string to a standard format
- * @param dateStr The date string to format
- * @returns Formatted date string
+ * Tries to parse a date string (accepting various formats) and returns YYYY-MM-DD.
+ * Handles relative terms.
+ * *** UPDATED: Defaults to TODAY'S date if parsing fails or input is invalid/unknown. ***
+ * @param dateStr The input date string.
+ * @returns Date string in YYYY-MM-DD format.
  */
-export function formatDate(dateStr: string): string {
-	// Handle different date formats
-	let date: Date;
+export function resolveAndFormatDate(dateStr: string | undefined | null): string {
+    const today = new Date(); // Reference date for relative parsing AND default
+    // Format today's date immediately for fallback use
+    const todayDateString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
-	// Try MM/DD/YYYY format
-	if (/\d{1,2}\/\d{1,2}\/\d{4}/.test(dateStr)) {
-		const [month, day, year] = dateStr.split('/').map((num) => parseInt(num, 10));
-		date = new Date(year, month - 1, day);
-	}
-	// Try Month DD, YYYY format
-	else if (
-		/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},\s+\d{4}\b/i.test(dateStr)
-	) {
-		date = new Date(dateStr);
-	}
-	// Default to returning the original string if not recognized
-	else {
-		return dateStr;
-	}
+    // --- Condition 1: Handle empty or clearly invalid input ---
+    if (!dateStr || typeof dateStr !== 'string' || !dateStr.trim()) {
+        console.warn(`[resolveAndFormatDate] No date string provided, defaulting to today: ${todayDateString}`);
+        return todayDateString; // Default to today
+    }
 
-	// If we couldn't parse the date properly, return the original
-	if (isNaN(date.getTime())) {
-		return dateStr;
-	}
+    const trimmedDateStr = dateStr.trim();
 
-	// Return formatted date: YYYY-MM-DD
-	return date.toISOString().split('T')[0];
+    // --- Condition 2: Handle explicit "unknown" or placeholder from LLM ---
+    // Also check for simple relative terms Chrono might miss sometimes
+    const lowerTrimmed = trimmedDateStr.toLowerCase();
+    if (lowerTrimmed === 'unknown' || trimmedDateStr === 'YYYY-MM-DD' || lowerTrimmed === 'today') {
+         console.warn(`[resolveAndFormatDate] Received '${trimmedDateStr}', defaulting to today: ${todayDateString}`);
+        return todayDateString; // Default to today
+    }
+     if (lowerTrimmed === 'yesterday') {
+         const yesterday = new Date(today);
+         yesterday.setDate(today.getDate() - 1);
+         return `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+     }
+
+
+    // --- Condition 3: Attempt parsing with Chrono ---
+    try {
+        const results = chrono.parse(trimmedDateStr, today); // Use today as reference
+
+        if (results.length === 0) {
+             console.warn(`[resolveAndFormatDate] Chrono couldn't parse '${trimmedDateStr}', defaulting to today: ${todayDateString}`);
+            // Fallback: Default to today's date if Chrono fails
+            return todayDateString;
+        }
+
+        // Use the first parse result
+        const parsedDate = results[0].start.date();
+        if (isNaN(parsedDate.getTime())) {
+             console.warn(`[resolveAndFormatDate] Chrono parsed invalid date from '${trimmedDateStr}', defaulting to today: ${todayDateString}`);
+            return todayDateString; // Default to today if Chrono result is invalid JS Date
+        }
+
+        // Return Chrono result in YYYY-MM-DD format
+        const year = parsedDate.getFullYear();
+        const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
+        const day = String(parsedDate.getDate()).padStart(2, '0');
+        const formattedDate = `${year}-${month}-${day}`;
+        // console.log(`[resolveAndFormatDate] Parsed '${trimmedDateStr}' to ${formattedDate}`);
+        return formattedDate;
+
+    } catch (error) {
+        console.error(`[resolveAndFormatDate] Error during Chrono parsing for '${trimmedDateStr}':`, error);
+        return todayDateString; // Default to today on unexpected error
+    }
 }
+
+// Other functions like formatDate, extractYear, groupTransactionsByMonth remain as they were
+// unless you need to update their date handling as well. formatDate and extractYear
+// seem less critical now that resolveAndFormatDate is the primary parser.
 
 /**
  * Extracts the year from a date string
@@ -68,39 +103,6 @@ export function extractYear(dateStr: string): number | undefined {
  * @param dateStr The input date string.
  * @returns Date string in YYYY-MM-DD format, or the original string if not recognized/parsable, or 'unknown'.
 
-/**
- * Instead of naive checks for 'today', 'yesterday', parse with Chrono.
- */
-export function resolveAndFormatDate(dateStr: string | undefined | null): string {
-	if (!dateStr || typeof dateStr !== 'string' || !dateStr.trim()) {
-		return 'unknown';
-	}
-
-	// Optionally detect if user typed "unknown"
-	if (dateStr.trim().toLowerCase() === 'unknown') {
-		return 'unknown';
-	}
-
-	// For reference, let's assume 'today' is the actual system date
-	const today = new Date(); // or pass a reference date from outside if needed
-	const results = chrono.parse(dateStr, today);
-	if (results.length === 0) {
-		// Could not parse with chrono, fallback to your original logic or just return dateStr
-		return dateStr;
-	}
-
-	// Use the first parse result
-	const parsedDate = results[0].start.date();
-	if (isNaN(parsedDate.getTime())) {
-		return dateStr; // can't parse
-	}
-
-	// Return in YYYY-MM-DD format
-	const year = parsedDate.getFullYear();
-	const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
-	const day = String(parsedDate.getDate()).padStart(2, '0');
-	return `${year}-${month}-${day}`;
-}
 
 /**
  * Groups transactions by month

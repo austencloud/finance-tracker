@@ -24,16 +24,30 @@ export async function handleExtraction(
 	message: string,
 	explicitDirectionIntent: 'in' | 'out' | null
 ): Promise<{ handled: boolean; response?: string; extractedCount?: number }> {
-	// Intercept "split $X" mentions and ask for responsible share first
-	const splitMatch = message.match(/\bsplit\b.*\$(\d+(\.\d{1,2})?)/i);
+	const splitRegex =
+		/\bsplit\b(?:.*?)(?:[\$£€¥]|\b(?:USD|EUR|GBP|JPY|CAD|AUD|CHF|CNY|INR)\b)?\s?((?:\d{1,3}(?:,\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?))\s?([kK])?/i;
+	const splitMatch = message.match(splitRegex);
+
 	if (splitMatch) {
-		const total = splitMatch[1];
-		appStore.addConversationMessage(
-			'assistant',
-			`You mentioned splitting a $${total} bill — how many people split it, and how much were *you* responsible for?`
-		);
-		appStore.setConversationStatus('Awaiting split‑bill details', 100);
-		return { handled: true, response: '' };
+		let amountStr = splitMatch[1].replace(/,/g, '');
+		const kSuffix = splitMatch[2];
+
+		if (kSuffix) {
+			const num = parseFloat(amountStr);
+			amountStr = isNaN(num) ? amountStr : (num * 1000).toString();
+		}
+		const total = parseFloat(amountStr);
+
+		if (!isNaN(total)) {
+			appStore.addConversationMessage(
+				'assistant',
+				`You mentioned splitting a bill (total approx. ${total}). How much was *your* specific share?`
+			);
+			appStore.setConversationStatus('Awaiting split-bill details', 100);
+			return { handled: true, response: '' };
+		} else {
+			console.warn('[ExtractionHandler] Could not parse split amount from:', splitMatch[0]);
+		}
 	}
 
 	if (!textLooksLikeTransaction(message)) {
@@ -76,10 +90,8 @@ export async function handleExtraction(
 				`[Extraction] Found ${parsedTransactions.length} valid transactions out of approximately ${estimateClauses} mentioned. Proceeding with what we have.`
 			);
 
-			// Only retry if we got nothing at all
 			if (parsedTransactions.length === 0) {
 				console.warn(`[Extraction] No transactions parsed, attempting retry...`);
-				// (retry logic here)
 			}
 		}
 

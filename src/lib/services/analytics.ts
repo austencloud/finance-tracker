@@ -1,5 +1,7 @@
 // ─────────────────────────  analytics.ts  ─────────────────────────
+import { BASE_CURRENCY } from '$lib/config/constants';
 import type { Transaction } from '$lib/stores/types';
+import { getAmountInBase } from './conversion';
 // at the top of services/analytics.ts
 export interface FinancialSummary {
 	totalIncome: number;
@@ -7,99 +9,171 @@ export interface FinancialSummary {
 	netCashflow: number;
 	savingsRate: number;
 	analysis?: string;
-  }
-  export interface Anomaly {
+}
+export interface Anomaly {
 	index: number;
 	risk: 'low' | 'medium' | 'high';
 	reason: string;
-  }
-  export interface AnomalyResult {
+}
+export interface AnomalyResult {
 	anomalies: Anomaly[];
-  }
-  export interface PredictionResult {
+}
+export interface PredictionResult {
 	predictedIncome: number;
 	predictedExpenses: number;
 	reliability: 'none' | 'low' | 'medium' | 'high';
 	message: string;
-  }
-/* ------------------------------------------------------------------
-   1)  SUMMARY  ——————————————————————————————————————————————— */
-export function calculateFinancialSummary(txns: Transaction[]) {
-	// gross figures
-	const income = txns
-		.filter((t) => t.direction === 'in')
-		.reduce((sum, t) => sum + (t.amount ?? 0), 0);
+}
 
-	const expense = txns
-		.filter((t) => t.direction === 'out')
-		.reduce((sum, t) => sum + (t.amount ?? 0), 0);
+/* ------------------------------------------------------------------
+   1)  SUMMARY (Now Async)
+------------------------------------------------------------------- */
+export async function calculateFinancialSummary(txns: Transaction[]) {
+	let income = 0;
+	let expense = 0;
+	let conversionErrors = 0;
+	const byCategory: Record<string, number> = {};
+	const byMonth: Record<string, number> = {};
+
+	for (const t of txns) {
+		const amountInBase = await getAmountInBase(t);
+
+		if (amountInBase === null) {
+			conversionErrors++;
+			continue; // Skip transactions that couldn't be converted
+		}
+
+		const signedAmountInBase = (t.direction === 'out' ? -1 : 1) * Math.abs(amountInBase);
+
+		// --- Use converted amounts for calculations ---
+		if (t.direction === 'in') {
+			income += Math.abs(amountInBase);
+		} else if (t.direction === 'out') {
+			expense += Math.abs(amountInBase);
+		}
+
+		if (t.category) {
+			byCategory[t.category] = (byCategory[t.category] ?? 0) + signedAmountInBase;
+		}
+
+		// Use original date for bucket key, but converted amount
+		const [y, m] = t.date.split('-'); // YYYY-MM-DD
+		if (y && m) {
+			// Ensure date is valid enough to split
+			const bucket = `${y}-${m}`; // YYYY-MM
+			byMonth[bucket] = (byMonth[bucket] ?? 0) + signedAmountInBase;
+		}
+		// --- End using converted amounts ---
+	}
 
 	const net = income - expense;
 	const savingsRate = income === 0 ? 0 : +(100 * (net / income)).toFixed(1);
 
-	// by‑category breakdown (positive for income, negative for outflow)
-	const byCategory: Record<string, number> = {};
-	for (const t of txns) {
-		if (!t.category) continue;
-		const amt = (t.direction === 'out' ? -1 : 1) * (t.amount ?? 0);
-		byCategory[t.category] = (byCategory[t.category] ?? 0) + amt;
+	// Log errors if any occurred
+	if (conversionErrors > 0) {
+		console.warn(
+			`[calculateFinancialSummary] Skipped ${conversionErrors} transactions due to missing date or conversion rate.`
+		);
 	}
 
-	// simple month‑over‑month cash‑flow trend
-	const byMonth: Record<string, number> = {};
-	for (const t of txns) {
-		const [y, m] = t.date.split('-'); // YYYY‑MM‑DD
-		const bucket = `${y}-${m}`; // YYYY‑MM
-		const amt = (t.direction === 'out' ? -1 : 1) * (t.amount ?? 0);
-		byMonth[bucket] = (byMonth[bucket] ?? 0) + amt;
-	}
-
+	// Return results in BASE_CURRENCY
 	return {
 		income,
 		expense,
 		net,
 		savingsRate, // %
-		byCategory, // { Grocery: -123.45, Salary: 2000 … }
-		byMonth // { '2025‑04': 1500, '2025‑05': -200 … }
+		byCategory,
+		byMonth,
+		conversionErrors // Optionally return error count
 	};
 }
 
 /* ------------------------------------------------------------------
-   2)  ANOMALIES  (very lightweight heuristic)
-       A transaction is “large” if it’s > 3× its category’s median.
+   2)  ANOMALIES (Now Async)
 ------------------------------------------------------------------- */
-export function detectAnomalies(txns: Transaction[]) {
+export async function detectAnomalies(txns: Transaction[]) {
 	const grouped: Record<string, number[]> = {};
+	let conversionErrors = 0;
+
 	for (const t of txns) {
-		if (!t.category || t.amount == null) continue;
-		(grouped[t.category] ??= []).push(Math.abs(t.amount));
+		if (!t.category) continue;
+
+		const amountInBase = await getAmountInBase(t);
+		if (amountInBase === null) {
+			conversionErrors++;
+			continue; // Skip if conversion failed
+		}
+		// Group by category using the absolute BASE CURRENCY amount
+		(grouped[t.category] ??= []).push(Math.abs(amountInBase));
 	}
 
-	const med = (arr: number[]) => arr.sort((a, b) => a - b)[Math.floor(arr.length / 2)] ?? 0;
+	const med = (arr: number[]) =>
+		arr.length === 0 ? 0 : arr.sort((a, b) => a - b)[Math.floor(arr.length / 2)];
 
 	const medians: Record<string, number> = {};
-	for (const c in grouped) medians[c] = med(grouped[c]);
+	for (const c in grouped) {
+		medians[c] = med(grouped[c]);
+	}
 
-	const anomalies = txns.filter((t) => {
+	const anomaliesPromises = txns.map(async (t, index): Promise<Anomaly | null> => {
 		const base = medians[t.category ?? ''];
-		return base > 0 && Math.abs(t.amount ?? 0) > 3 * base;
+		if (base <= 0) return null; // No median or zero median
+
+		const amountInBase = await getAmountInBase(t);
+		if (amountInBase === null) return null; // Skip if conversion failed
+
+		if (Math.abs(amountInBase) > 3 * base) {
+			// Anomaly detected based on base currency values
+			return {
+				index: index, // Keep original index for reference
+				// Risk calculation could also be based on deviation from median
+				risk:
+					Math.abs(amountInBase) > 6 * base
+						? 'high'
+						: Math.abs(amountInBase) > 4 * base
+							? 'medium'
+							: 'low',
+				reason: `Amount (${t.amount} ${t.currency} ≈ ${amountInBase.toFixed(2)} ${BASE_CURRENCY}) significantly deviates from the median for category '${t.category}' (Median ≈ ${base.toFixed(2)} ${BASE_CURRENCY}).`
+			};
+		}
+		return null;
 	});
 
-	return { anomalies };
+	const resolvedAnomalies = (await Promise.all(anomaliesPromises)).filter(
+		(a): a is Anomaly => a !== null
+	);
+
+	if (conversionErrors > 0) {
+		console.warn(
+			`[detectAnomalies] Skipped ${conversionErrors} transactions during median calculation due to missing date or conversion rate.`
+		);
+	}
+
+	return { anomalies: resolvedAnomalies };
 }
 
 /* ------------------------------------------------------------------
-   3)  “PREDICTION”  (naïve average monthly cash‑flow projection)
+   3)  PREDICTION (Now Async)
 ------------------------------------------------------------------- */
-export function predictFutureTransactions(txns: Transaction[]) {
+export async function predictFutureTransactions(txns: Transaction[]) {
 	if (txns.length === 0) return null;
 
-	// bucket by month → total cash‑flow
 	const buckets: Record<string, number> = {};
+	let conversionErrors = 0;
+
 	for (const t of txns) {
-		const key = t.date.slice(0, 7); // YYYY‑MM
-		const amt = (t.direction === 'out' ? -1 : 1) * (t.amount ?? 0);
-		buckets[key] = (buckets[key] ?? 0) + amt;
+		if (t.date === 'unknown' || !/^\d{4}-\d{2}-\d{2}$/.test(t.date)) {
+			continue; // Skip transactions without valid date
+		}
+		const amountInBase = await getAmountInBase(t);
+		if (amountInBase === null) {
+			conversionErrors++;
+			continue; // Skip if conversion failed
+		}
+
+		const signedAmountInBase = (t.direction === 'out' ? -1 : 1) * Math.abs(amountInBase);
+		const key = t.date.slice(0, 7); // YYYY-MM
+		buckets[key] = (buckets[key] ?? 0) + signedAmountInBase;
 	}
 
 	const monthlyTotals = Object.values(buckets);
@@ -107,6 +181,13 @@ export function predictFutureTransactions(txns: Transaction[]) {
 
 	const avg = +(monthlyTotals.reduce((s, v) => s + v, 0) / monthlyTotals.length).toFixed(2);
 
+	if (conversionErrors > 0) {
+		console.warn(
+			`[predictFutureTransactions] Prediction based on data excluding ${conversionErrors} unconverted transactions.`
+		);
+	}
+
+	// Return projection in BASE_CURRENCY
 	return { projectedMonthlyNet: avg };
 }
 
@@ -114,24 +195,10 @@ export function predictFutureTransactions(txns: Transaction[]) {
    4)  LLM‑FREE WRAPPER  (keeps AppStore API untouched)
 ------------------------------------------------------------------- */
 let lastSig = ''; // cache so we don’t recalc needlessly
-let lastResult: ReturnType<typeof calculateFinancialSummary> & {
-	anomalies: ReturnType<typeof detectAnomalies>['anomalies'];
-	predictions: ReturnType<typeof predictFutureTransactions>;
+let lastResult: Awaited<ReturnType<typeof calculateFinancialSummary>> & {
+	anomalies: Awaited<ReturnType<typeof detectAnomalies>>['anomalies'];
+	predictions: Awaited<ReturnType<typeof predictFutureTransactions>>;
 };
-
-export async function getLLMAnalysis(txns: Transaction[]) {
-	// cheap hash so we don’t redo work if nothing changed
-	const sig = fnv1a32(JSON.stringify(txns));
-	if (sig === lastSig && lastResult) return lastResult;
-
-	const summary = calculateFinancialSummary(txns);
-	const anomalies = detectAnomalies(txns).anomalies;
-	const predictions = predictFutureTransactions(txns);
-
-	lastSig = sig;
-	lastResult = { ...summary, anomalies, predictions };
-	return lastResult;
-}
 
 /* ------------------------------------------------------------------
    5)  tiny FNV‑1a hash (32‑bit) — keeps caching constant‑time
