@@ -1,0 +1,830 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Finance Analysis App Enhancement Roadmap</title>
+		<script src="https://cdn.tailwindcss.com"></script>
+		<link
+			rel="stylesheet"
+			href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css"
+		/>
+		<link rel="preconnect" href="https://fonts.googleapis.com" />
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+		<link
+			href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap"
+			rel="stylesheet"
+		/>
+		<style>
+			/* Basic body styling */
+			body {
+				font-family: 'Inter', sans-serif;
+				color: #374151; /* Gray-700 */
+				background: #f9fafb; /* Gray-50 */
+			}
+			/* Header gradient */
+			.gradient-header {
+				background: linear-gradient(90deg, #10b981, #3b82f6); /* Emerald to Blue gradient */
+				color: white;
+			}
+			/* Styling for phase cards */
+			.phase-card {
+				transition: all 0.3s ease;
+				border-left: 4px solid transparent; /* Default transparent border */
+				border-radius: 0.5rem; /* Rounded corners */
+			}
+			/* Hover effect for phase cards */
+			.phase-card:hover {
+				transform: translateY(-5px); /* Lift card on hover */
+				box-shadow:
+					0 10px 25px -5px rgba(0, 0, 0, 0.1),
+					0 10px 10px -5px rgba(0, 0, 0, 0.04); /* Add shadow */
+			}
+			/* Specific border colors for each phase card */
+			.phase-card.phase-1 {
+				border-color: #3b82f6;
+			} /* Blue-500 */
+			.phase-card.phase-2 {
+				border-color: #6366f1;
+			} /* Indigo-500 */
+			.phase-card.phase-3 {
+				border-color: #10b981;
+			} /* Emerald-500 */
+			.phase-card.phase-4 {
+				border-color: #f59e0b;
+			} /* Amber-500 */
+			.phase-card.phase-5 {
+				border-color: #8b5cf6;
+			} /* Violet-500 */
+			.phase-card.phase-6 {
+				border-color: #ef4444;
+			} /* Red-500 */
+			.phase-card.phase-7 {
+				border-color: #0ea5e9;
+			} /* Sky-500 */
+			.phase-card.phase-8 {
+				border-color: #ec4899;
+			} /* Pink-500 */
+
+			/* Timeline container styling */
+			.timeline {
+				position: relative;
+			}
+			/* Vertical line for the timeline */
+			.timeline::before {
+				content: '';
+				position: absolute;
+				top: 0;
+				left: 1.5rem; /* Position on the left for mobile */
+				height: 100%;
+				width: 4px;
+				background: #d1d5db; /* Gray-300 */
+				border-radius: 2px;
+			}
+			/* Individual timeline item styling */
+			.timeline-item {
+				position: relative;
+				padding-left: 3.5rem; /* Space for the marker on mobile */
+				margin-bottom: 2rem;
+			}
+			/* Circular marker for timeline items */
+			.timeline-marker {
+				position: absolute;
+				left: 0;
+				top: 0;
+				width: 3rem;
+				height: 3rem;
+				border-radius: 50%; /* Make it a circle */
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				z-index: 10; /* Ensure marker is above the line */
+				box-shadow: 0 0 0 4px #f9fafb; /* Background color ring around marker */
+			}
+			/* Content box for timeline items */
+			.timeline-content {
+				padding: 1.5rem;
+				border-radius: 0.5rem; /* Rounded corners */
+				box-shadow:
+					0 4px 6px -1px rgba(0, 0, 0, 0.1),
+					0 2px 4px -1px rgba(0, 0, 0, 0.06); /* Subtle shadow */
+				background-color: white;
+			}
+			/* Styling for deliverable badges */
+			.deliverable-badge {
+				border-radius: 9999px; /* Pill shape */
+				padding: 0.25rem 0.75rem;
+				font-size: 0.75rem; /* Small font size */
+				font-weight: 500; /* Medium weight */
+				margin-right: 0.5rem;
+				margin-bottom: 0.5rem;
+				display: inline-block;
+				white-space: nowrap; /* Prevent wrapping */
+			}
+			/* Styling for implementation strategy cards */
+			.implementation-card {
+				border-radius: 0.5rem; /* Rounded corners */
+				padding: 1.5rem;
+				margin-bottom: 1.5rem;
+				transition: all 0.3s ease; /* Smooth transition */
+			}
+			/* Hover effect for implementation cards */
+			.implementation-card:hover {
+				transform: translateY(-5px); /* Lift card on hover */
+				box-shadow:
+					0 10px 25px -5px rgba(0, 0, 0, 0.1),
+					0 10px 10px -5px rgba(0, 0, 0, 0.04); /* Add shadow */
+			}
+
+			/* Responsive adjustments for medium screens and up (desktop) */
+			@media (min-width: 768px) {
+				/* Center the timeline line */
+				.timeline::before {
+					left: 50%;
+					margin-left: -2px; /* Adjust to center the 4px line */
+				}
+				/* Reset padding for timeline items */
+				.timeline-item {
+					padding-left: 0;
+					margin-bottom: 4rem; /* Increase bottom margin */
+				}
+				/* Position odd items to the left */
+				.timeline-item:nth-child(odd) {
+					padding-right: calc(50% + 1.5rem); /* Space from center line */
+					padding-left: 0;
+				}
+				/* Position even items to the right */
+				.timeline-item:nth-child(even) {
+					padding-left: calc(50% + 1.5rem); /* Space from center line */
+					padding-right: 0;
+				}
+				/* Center the timeline marker */
+				.timeline-marker {
+					left: 50%;
+					transform: translateX(-50%); /* Center horizontally */
+				}
+				/* Align odd item content to the right */
+				.timeline-item:nth-child(odd) .timeline-content {
+					text-align: right; /* Optional: Align text */
+				}
+				/* Align even item content to the left (default) */
+				.timeline-item:nth-child(even) .timeline-content {
+					text-align: left;
+				}
+			}
+		</style>
+	</head>
+	<body class="bg-gray-50">
+		<header class="gradient-header py-16 text-center">
+			<div class="container mx-auto px-4">
+				<h1 class="text-4xl md:text-5xl font-bold mb-4">
+					Finance Analysis App Enhancement Roadmap
+				</h1>
+				<p class="text-xl opacity-90 max-w-3xl mx-auto">
+					Project Nightingale: A 24-month strategic plan focusing on advanced features, professional
+					code quality, and user empowerment.
+				</p>
+			</div>
+		</header>
+
+		<main class="container mx-auto px-4 py-12">
+			<section class="mb-16">
+				<div class="bg-white rounded-lg shadow-lg p-8">
+					<h2 class="text-3xl font-bold mb-6 text-center">Strategic Overview</h2>
+					<p class="text-lg mb-8 text-center max-w-3xl mx-auto">
+						This 24-month roadmap outlines a phased approach to significantly enhance the
+						capabilities of the Finance Analysis App. The plan focuses on integrating diverse data
+						sources, implementing sophisticated analytical tools, leveraging AI for deeper insights,
+						improving user experience and customization, and embedding professional development
+						practices to ensure robust performance, security, and maintainability.
+					</p>
+
+					<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mt-8">
+						<div class="bg-blue-50 rounded-lg p-6 text-center border-l-4 border-blue-500">
+							<div class="text-blue-600 text-4xl mb-4"><i class="fas fa-database"></i></div>
+							<h3 class="text-xl font-semibold mb-2">Data Agility</h3>
+							<p class="text-gray-600">
+								Seamless integration with banks, brokers, and market data APIs.
+							</p>
+						</div>
+						<div class="bg-emerald-50 rounded-lg p-6 text-center border-l-4 border-emerald-500">
+							<div class="text-emerald-600 text-4xl mb-4"><i class="fas fa-chart-line"></i></div>
+							<h3 class="text-xl font-semibold mb-2">Analytical Depth</h3>
+							<p class="text-gray-600">
+								Advanced, customizable analysis, modeling, and visualization tools.
+							</p>
+						</div>
+						<div class="bg-violet-50 rounded-lg p-6 text-center border-l-4 border-violet-500">
+							<div class="text-violet-600 text-4xl mb-4"><i class="fas fa-brain"></i></div>
+							<h3 class="text-xl font-semibold mb-2">Intelligent Insights</h3>
+							<p class="text-gray-600">
+								AI/ML for predictive analytics, anomaly detection, and personalization.
+							</p>
+						</div>
+						<div class="bg-amber-50 rounded-lg p-6 text-center border-l-4 border-amber-500">
+							<div class="text-amber-600 text-4xl mb-4"><i class="fas fa-user-cog"></i></div>
+							<h3 class="text-xl font-semibold mb-2">User Empowerment</h3>
+							<p class="text-gray-600">
+								Intuitive interfaces, customization, and collaboration features.
+							</p>
+						</div>
+						<div class="bg-sky-50 rounded-lg p-6 text-center border-l-4 border-sky-500">
+							<div class="text-sky-600 text-4xl mb-4"><i class="fas fa-code"></i></div>
+							<h3 class="text-xl font-semibold mb-2">Code Quality</h3>
+							<p class="text-gray-600">
+								Emphasis on testing, maintainability, documentation, and best practices.
+							</p>
+						</div>
+						<div class="bg-red-50 rounded-lg p-6 text-center border-l-4 border-red-500">
+							<div class="text-red-600 text-4xl mb-4"><i class="fas fa-shield-alt"></i></div>
+							<h3 class="text-xl font-semibold mb-2">Platform Excellence</h3>
+							<p class="text-gray-600">
+								Ensuring scalability, security, performance, and reliability.
+							</p>
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<section class="mb-16">
+				<h2 class="text-3xl font-bold mb-8 text-center">Development Phases</h2>
+				<div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+					<div class="phase-card phase-1 bg-white shadow-lg overflow-hidden">
+						<div class="bg-blue-500 text-white py-3 px-6">
+							<div class="flex justify-between items-center">
+								<h3 class="text-xl font-bold">Phase 1: Core Engine & UX Refinement</h3>
+								<span class="text-sm bg-white text-blue-600 rounded-full px-3 py-1 font-medium"
+									>Months 1-3</span
+								>
+							</div>
+						</div>
+						<div class="p-6">
+							<h4 class="font-semibold mb-2 text-gray-800">Focus:</h4>
+							<p class="text-sm text-gray-600 mb-4">
+								Strengthen backend, optimize performance, refresh UI/UX, solidify core calculations,
+								establish development practices.
+							</p>
+							<h4 class="font-semibold mb-2 text-gray-800">Key Tasks:</h4>
+							<ul class="space-y-2 text-gray-700 text-sm">
+								<li class="flex items-start">
+									<span class="text-blue-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span>Review/Optimize data structures & queries.</span>
+								</li>
+								<li class="flex items-start">
+									<span class="text-blue-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span
+										>Implement consistent design system & component library (e.g., using
+										Storybook).</span
+									>
+								</li>
+								<li class="flex items-start">
+									<span class="text-blue-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span>Refactor/Validate core financial calculations with unit tests.</span>
+								</li>
+								<li class="flex items-start">
+									<span class="text-blue-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span>Enhance security foundations (AuthN/AuthZ).</span>
+								</li>
+								<li class="flex items-start">
+									<span class="text-blue-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span
+										>Establish CI/CD pipeline, automated linting/formatting, basic test suite.</span
+									>
+								</li>
+							</ul>
+						</div>
+					</div>
+
+					<div class="phase-card phase-2 bg-white shadow-lg overflow-hidden">
+						<div class="bg-indigo-500 text-white py-3 px-6">
+							<div class="flex justify-between items-center">
+								<h3 class="text-xl font-bold">Phase 2: Expanded Data Integration</h3>
+								<span class="text-sm bg-white text-indigo-600 rounded-full px-3 py-1 font-medium"
+									>Months 4-6</span
+								>
+							</div>
+						</div>
+						<div class="p-6">
+							<h4 class="font-semibold mb-2 text-gray-800">Focus:</h4>
+							<p class="text-sm text-gray-600 mb-4">
+								Connect to essential financial data sources automatically and reliably.
+							</p>
+							<h4 class="font-semibold mb-2 text-gray-800">Key Tasks:</h4>
+							<ul class="space-y-2 text-gray-700 text-sm">
+								<li class="flex items-start">
+									<span class="text-indigo-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span
+										>Implement Plaid integration (or similar) for bank/credit card linking.</span
+									>
+								</li>
+								<li class="flex items-start">
+									<span class="text-indigo-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span
+										>Integrate with major brokerage APIs (e.g., Interactive Brokers, Alpaca).</span
+									>
+								</li>
+								<li class="flex items-start">
+									<span class="text-indigo-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span
+										>Enhance manual CSV/OFX imports with intelligent mapping & validation.</span
+									>
+								</li>
+								<li class="flex items-start">
+									<span class="text-indigo-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span>Develop robust, testable data ingestion & normalization pipeline.</span>
+								</li>
+								<li class="flex items-start">
+									<span class="text-indigo-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span>Implement secure credential management for external APIs.</span>
+								</li>
+							</ul>
+						</div>
+					</div>
+
+					<div class="phase-card phase-3 bg-white shadow-lg overflow-hidden">
+						<div class="bg-emerald-500 text-white py-3 px-6">
+							<div class="flex justify-between items-center">
+								<h3 class="text-xl font-bold">Phase 3: Advanced Analytics & Visualization</h3>
+								<span class="text-sm bg-white text-emerald-600 rounded-full px-3 py-1 font-medium"
+									>Months 7-9</span
+								>
+							</div>
+						</div>
+						<div class="p-6">
+							<h4 class="font-semibold mb-2 text-gray-800">Focus:</h4>
+							<p class="text-sm text-gray-600 mb-4">
+								Introduce sophisticated analysis tools and rich, interactive charting.
+							</p>
+							<h4 class="font-semibold mb-2 text-gray-800">Key Tasks:</h4>
+							<ul class="space-y-2 text-gray-700 text-sm">
+								<li class="flex items-start">
+									<span class="text-emerald-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span
+										>Develop portfolio analysis module (allocation, risk, performance
+										attribution).</span
+									>
+								</li>
+								<li class="flex items-start">
+									<span class="text-emerald-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span
+										>Implement interactive charting library (e.g., Chart.js, D3, TradingView) with
+										technical indicators.</span
+									>
+								</li>
+								<li class="flex items-start">
+									<span class="text-emerald-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span>Add scenario modeling & forecasting ("what-if" analysis).</span>
+								</li>
+								<li class="flex items-start">
+									<span class="text-emerald-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span>Create customizable dashboard widgets with clear data bindings.</span>
+								</li>
+								<li class="flex items-start">
+									<span class="text-emerald-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span>Write comprehensive tests for all analytical calculations.</span>
+								</li>
+							</ul>
+						</div>
+					</div>
+
+					<div class="phase-card phase-4 bg-white shadow-lg overflow-hidden">
+						<div class="bg-amber-500 text-white py-3 px-6">
+							<div class="flex justify-between items-center">
+								<h3 class="text-xl font-bold">Phase 4: User Customization & Collaboration</h3>
+								<span class="text-sm bg-white text-amber-600 rounded-full px-3 py-1 font-medium"
+									>Months 10-12</span
+								>
+							</div>
+						</div>
+						<div class="p-6">
+							<h4 class="font-semibold mb-2 text-gray-800">Focus:</h4>
+							<p class="text-sm text-gray-600 mb-4">
+								Empower users with personalized views, reporting, and sharing capabilities.
+							</p>
+							<h4 class="font-semibold mb-2 text-gray-800">Key Tasks:</h4>
+							<ul class="space-y-2 text-gray-700 text-sm">
+								<li class="flex items-start">
+									<span class="text-amber-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span>Develop drag-and-drop custom dashboard builder.</span>
+								</li>
+								<li class="flex items-start">
+									<span class="text-amber-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span>Implement a flexible report generation tool (PDF/CSV exports).</span>
+								</li>
+								<li class="flex items-start">
+									<span class="text-amber-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span
+										>Add secure sharing features for dashboards/reports (view-only/edit
+										permissions).</span
+									>
+								</li>
+								<li class="flex items-start">
+									<span class="text-amber-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span>Introduce saved views and filter presets.</span>
+								</li>
+								<li class="flex items-start">
+									<span class="text-amber-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span>Design modular widget architecture for easy extension.</span>
+								</li>
+							</ul>
+						</div>
+					</div>
+
+					<div class="phase-card phase-5 bg-white shadow-lg overflow-hidden">
+						<div class="bg-violet-500 text-white py-3 px-6">
+							<div class="flex justify-between items-center">
+								<h3 class="text-xl font-bold">Phase 5: AI/ML Integration</h3>
+								<span class="text-sm bg-white text-violet-600 rounded-full px-3 py-1 font-medium"
+									>Months 13-15</span
+								>
+							</div>
+						</div>
+						<div class="p-6">
+							<h4 class="font-semibold mb-2 text-gray-800">Focus:</h4>
+							<p class="text-sm text-gray-600 mb-4">
+								Leverage AI for predictive analytics, anomaly detection, and personalized insights.
+							</p>
+							<h4 class="font-semibold mb-2 text-gray-800">Key Tasks:</h4>
+							<ul class="space-y-2 text-gray-700 text-sm">
+								<li class="flex items-start">
+									<span class="text-violet-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span>Implement ML-based cash flow prediction models.</span>
+								</li>
+								<li class="flex items-start">
+									<span class="text-violet-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span>Enhance anomaly detection using statistical methods and/or ML.</span>
+								</li>
+								<li class="flex items-start">
+									<span class="text-violet-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span>Develop personalized insights & recommendations engine.</span>
+								</li>
+								<li class="flex items-start">
+									<span class="text-violet-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span>Explore AI-driven automated categorization refinement.</span>
+								</li>
+								<li class="flex items-start">
+									<span class="text-violet-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span>Establish clear separation and error handling for AI service calls.</span>
+								</li>
+							</ul>
+						</div>
+					</div>
+
+					<div class="phase-card phase-6 bg-white shadow-lg overflow-hidden">
+						<div class="bg-red-500 text-white py-3 px-6">
+							<div class="flex justify-between items-center">
+								<h3 class="text-xl font-bold">Phase 6: Performance, Security & Scalability</h3>
+								<span class="text-sm bg-white text-red-600 rounded-full px-3 py-1 font-medium"
+									>Months 16-18</span
+								>
+							</div>
+						</div>
+						<div class="p-6">
+							<h4 class="font-semibold mb-2 text-gray-800">Focus:</h4>
+							<p class="text-sm text-gray-600 mb-4">
+								Optimize application performance, harden security, and ensure scalability for
+								growth.
+							</p>
+							<h4 class="font-semibold mb-2 text-gray-800">Key Tasks:</h4>
+							<ul class="space-y-2 text-gray-700 text-sm">
+								<li class="flex items-start">
+									<span class="text-red-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span>Conduct performance profiling & optimize critical queries/endpoints.</span>
+								</li>
+								<li class="flex items-start">
+									<span class="text-red-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span
+										>Implement comprehensive security audit (penetration testing, dependency
+										scanning).</span
+									>
+								</li>
+								<li class="flex items-start">
+									<span class="text-red-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span>Refactor core modules for improved scalability and maintainability.</span>
+								</li>
+								<li class="flex items-start">
+									<span class="text-red-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span>Implement advanced monitoring, logging, and alerting.</span>
+								</li>
+								<li class="flex items-start">
+									<span class="text-red-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span
+										>Introduce code reviews focused on performance & security vulnerabilities.</span
+									>
+								</li>
+							</ul>
+						</div>
+					</div>
+
+					<div class="phase-card phase-7 bg-white shadow-lg overflow-hidden">
+						<div class="bg-sky-500 text-white py-3 px-6">
+							<div class="flex justify-between items-center">
+								<h3 class="text-xl font-bold">Phase 7: Mobile Access & Alerts</h3>
+								<span class="text-sm bg-white text-sky-600 rounded-full px-3 py-1 font-medium"
+									>Months 19-21</span
+								>
+							</div>
+						</div>
+						<div class="p-6">
+							<h4 class="font-semibold mb-2 text-gray-800">Focus:</h4>
+							<p class="text-sm text-gray-600 mb-4">
+								Provide on-the-go access and timely notifications.
+							</p>
+							<h4 class="font-semibold mb-2 text-gray-800">Key Tasks:</h4>
+							<ul class="space-y-2 text-gray-700 text-sm">
+								<li class="flex items-start">
+									<span class="text-sky-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span>Develop responsive mobile web app or PWA (Progressive Web App).</span>
+								</li>
+								<li class="flex items-start">
+									<span class="text-sky-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span
+										>Implement real-time push notifications for critical events (e.g., large
+										transactions, low balance).</span
+									>
+								</li>
+								<li class="flex items-start">
+									<span class="text-sky-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span>Optimize mobile user experience for key workflows.</span>
+								</li>
+								<li class="flex items-start">
+									<span class="text-sky-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span>Ensure secure and efficient background processing for alerts.</span>
+								</li>
+								<li class="flex items-start">
+									<span class="text-sky-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span>Follow platform-specific UI/UX best practices.</span>
+								</li>
+							</ul>
+						</div>
+					</div>
+
+					<div class="phase-card phase-8 bg-white shadow-lg overflow-hidden">
+						<div class="bg-pink-500 text-white py-3 px-6">
+							<div class="flex justify-between items-center">
+								<h3 class="text-xl font-bold">Phase 8: Ecosystem Integration & Automation</h3>
+								<span class="text-sm bg-white text-pink-600 rounded-full px-3 py-1 font-medium"
+									>Months 22-24</span
+								>
+							</div>
+						</div>
+						<div class="p-6">
+							<h4 class="font-semibold mb-2 text-gray-800">Focus:</h4>
+							<p class="text-sm text-gray-600 mb-4">
+								Connect with other financial tools and automate repetitive tasks.
+							</p>
+							<h4 class="font-semibold mb-2 text-gray-800">Key Tasks:</h4>
+							<ul class="space-y-2 text-gray-700 text-sm">
+								<li class="flex items-start">
+									<span class="text-pink-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span
+										>Develop API integrations with popular accounting/tax software (e.g.,
+										QuickBooks, TurboTax).</span
+									>
+								</li>
+								<li class="flex items-start">
+									<span class="text-pink-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span>Implement automated report generation and delivery.</span>
+								</li>
+								<li class="flex items-start">
+									<span class="text-pink-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span>Explore Zapier/IFTTT integration for custom workflows.</span>
+								</li>
+								<li class="flex items-start">
+									<span class="text-pink-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span>Finalize public API documentation for third-party developers.</span>
+								</li>
+								<li class="flex items-start">
+									<span class="text-pink-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+									><span>Ensure secure and well-documented API contracts for integrations.</span>
+								</li>
+							</ul>
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<section class="mb-16">
+				<h2 class="text-3xl font-bold mb-8 text-center">
+					Implementation Strategy & Professional Practices
+				</h2>
+				<div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+					<div class="implementation-card bg-white shadow-lg p-6 border-t-4 border-blue-500">
+						<div class="text-blue-500 text-3xl mb-4 text-center"><i class="fas fa-cogs"></i></div>
+						<h3 class="text-xl font-bold mb-4 text-center">Technical & Quality Considerations</h3>
+						<ul class="space-y-3 text-gray-700 text-sm">
+							<li class="flex items-start">
+								<span class="text-blue-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+								><span
+									>Adopt Agile methodology (Scrum/Kanban) with 2-week sprints, retrospectives.</span
+								>
+							</li>
+							<li class="flex items-start">
+								<span class="text-blue-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+								><span
+									>Mandatory CI/CD pipeline with automated builds, testing, and deployments.</span
+								>
+							</li>
+							<li class="flex items-start">
+								<span class="text-blue-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+								><span
+									>Implement comprehensive testing strategy: Unit, Integration, E2E (e.g., Jest,
+									Cypress), aiming for >80% coverage.</span
+								>
+							</li>
+							<li class="flex items-start">
+								<span class="text-blue-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+								><span
+									>Enforce strict code reviews for all changes (quality, security,
+									performance).</span
+								>
+							</li>
+							<li class="flex items-start">
+								<span class="text-blue-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+								><span>Utilize automated linting (ESLint/Prettier) and code formatting tools.</span>
+							</li>
+							<li class="flex items-start">
+								<span class="text-blue-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+								><span
+									>Maintain up-to-date documentation (code comments, API docs, architecture
+									diagrams).</span
+								>
+							</li>
+							<li class="flex items-start">
+								<span class="text-blue-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+								><span
+									>Establish robust monitoring, logging (structured), and alerting
+									(Prometheus/Grafana/Sentry).</span
+								>
+							</li>
+							<li class="flex items-start">
+								<span class="text-blue-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+								><span>Regular dependency audits and updates (npm audit/dependabot).</span>
+							</li>
+						</ul>
+					</div>
+
+					<div class="implementation-card bg-white shadow-lg p-6 border-t-4 border-purple-500">
+						<div class="text-purple-500 text-3xl mb-4 text-center">
+							<i class="fas fa-users-cog"></i>
+						</div>
+						<h3 class="text-xl font-bold mb-4 text-center">Team Requirements</h3>
+						<ul class="space-y-3 text-gray-700 text-sm">
+							<li class="flex items-start">
+								<span class="text-purple-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+								><span>Product Owner/Manager (Defines vision, prioritizes backlog).</span>
+							</li>
+							<li class="flex items-start">
+								<span class="text-purple-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+								><span>Scrum Master/Agile Coach (Facilitates process).</span>
+							</li>
+							<li class="flex items-start">
+								<span class="text-purple-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+								><span
+									>Frontend Developers (Svelte expertise, strong testing/design system
+									skills).</span
+								>
+							</li>
+							<li class="flex items-start">
+								<span class="text-purple-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+								><span
+									>Backend Developers (Node.js/Python/Go, API design, database optimization).</span
+								>
+							</li>
+							<li class="flex items-start">
+								<span class="text-purple-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+								><span>DevOps Engineer (CI/CD, Infrastructure as Code, Monitoring).</span>
+							</li>
+							<li class="flex items-start">
+								<span class="text-purple-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+								><span>QA Engineers (Manual & Automation testing expertise).</span>
+							</li>
+							<li class="flex items-start">
+								<span class="text-purple-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+								><span
+									>UI/UX Designer (User research, prototyping, design system maintenance).</span
+								>
+							</li>
+							<li class="flex items-start">
+								<span class="text-purple-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+								><span>Data Scientist/ML Engineer (For Phases 5+).</span>
+							</li>
+						</ul>
+					</div>
+
+					<div class="implementation-card bg-white shadow-lg p-6 border-t-4 border-red-500">
+						<div class="text-red-500 text-3xl mb-4 text-center">
+							<i class="fas fa-shield-alt"></i>
+						</div>
+						<h3 class="text-xl font-bold mb-4 text-center">Risk Management</h3>
+						<ul class="space-y-3 text-gray-700 text-sm">
+							<li class="flex items-start">
+								<span class="text-red-500 mr-2 pt-1"
+									><i class="fas fa-exclamation-triangle"></i></span
+								><span>**Scope Creep:** Strict backlog grooming & change control process.</span>
+							</li>
+							<li class="flex items-start">
+								<span class="text-red-500 mr-2 pt-1"
+									><i class="fas fa-exclamation-triangle"></i></span
+								><span
+									>**Technical Debt:** Allocate ~15-20% sprint capacity for refactoring/tech
+									improvements.</span
+								>
+							</li>
+							<li class="flex items-start">
+								<span class="text-red-500 mr-2 pt-1"
+									><i class="fas fa-exclamation-triangle"></i></span
+								><span
+									>**Third-Party API Changes:** Design integration layers defensively, monitor API
+									updates.</span
+								>
+							</li>
+							<li class="flex items-start">
+								<span class="text-red-500 mr-2 pt-1"
+									><i class="fas fa-exclamation-triangle"></i></span
+								><span
+									>**Security Vulnerabilities:** Regular audits, static analysis tools, secure
+									coding training.</span
+								>
+							</li>
+							<li class="flex items-start">
+								<span class="text-red-500 mr-2 pt-1"
+									><i class="fas fa-exclamation-triangle"></i></span
+								><span
+									>**Data Privacy (GDPR/CCPA):** Embed privacy-by-design principles, consult legal
+									experts.</span
+								>
+							</li>
+							<li class="flex items-start">
+								<span class="text-red-500 mr-2 pt-1"
+									><i class="fas fa-exclamation-triangle"></i></span
+								><span
+									>**Team Velocity/Attrition:** Cross-training, robust documentation, realistic
+									planning.</span
+								>
+							</li>
+						</ul>
+					</div>
+
+					<div class="implementation-card bg-white shadow-lg p-6 border-t-4 border-green-500">
+						<div class="text-green-500 text-3xl mb-4 text-center">
+							<i class="fas fa-chart-line"></i>
+						</div>
+						<h3 class="text-xl font-bold mb-4 text-center">Success Metrics (KPIs)</h3>
+						<ul class="space-y-3 text-gray-700 text-sm">
+							<li class="flex items-start">
+								<span class="text-green-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+								><span
+									>**User Engagement:** Daily/Monthly Active Users (DAU/MAU), Feature Adoption Rate,
+									Session Duration.</span
+								>
+							</li>
+							<li class="flex items-start">
+								<span class="text-green-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+								><span
+									>**User Satisfaction:** Net Promoter Score (NPS), Customer Satisfaction (CSAT),
+									App Store Ratings (if applicable).</span
+								>
+							</li>
+							<li class="flex items-start">
+								<span class="text-green-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+								><span
+									>**Technical Performance:** API Response Times (p95/p99), System Uptime, Error
+									Rates (client/server).</span
+								>
+							</li>
+							<li class="flex items-start">
+								<span class="text-green-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+								><span
+									>**Code Quality:** Test Coverage (%), Code Complexity (Cyclomatic), Number of
+									Critical Bugs Post-Release.</span
+								>
+							</li>
+							<li class="flex items-start">
+								<span class="text-green-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+								><span
+									>**Development Process:** Sprint Velocity Stability, Lead Time for Changes,
+									Deployment Frequency.</span
+								>
+							</li>
+							<li class="flex items-start">
+								<span class="text-green-500 mr-2 pt-1"><i class="fas fa-check-circle"></i></span
+								><span
+									>**Business Value:** Customer Lifetime Value (CLTV), Conversion Rate (if
+									applicable), Churn Rate.</span
+								>
+							</li>
+						</ul>
+					</div>
+				</div>
+			</section>
+		</main>
+
+		<footer class="bg-gray-800 text-white py-8 text-center">
+			<div class="container mx-auto px-4">
+				<p>&copy; 2025 Project Nightingale Finance App. All rights reserved.</p>
+				<p class="text-sm text-gray-400 mt-2">Building a Smarter Financial Future</p>
+			</div>
+		</footer>
+	</body>
+</html>
