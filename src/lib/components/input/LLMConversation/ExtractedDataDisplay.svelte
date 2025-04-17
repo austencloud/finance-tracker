@@ -1,25 +1,48 @@
 <script lang="ts">
-	import { appStore } from '$lib/stores/AppStore';
-	import type { Transaction, Category, SortField } from '$lib/types/types';
-	// *** Assuming formatCurrency is here or imported from utils ***
-	import { formatCurrency } from '$lib/utils/helpers'; // Or your actual path
-	import { onDestroy } from 'svelte';
-	import { derived } from 'svelte/store';
+	// --- Store Imports ---
+	// import { appStore } from '$lib/stores/AppStore'; // REMOVE old monolithic store
+	import { uiStore } from '$lib/stores/uiStore'; // ADD specific ui store
+	import { sortedFilteredTransactions } from '$lib/stores/derivedStores'; // ADD derived store
 
-	function handleItemClick(transactionId: string) {
-		console.log(`[ExtractedDataDisplay] Item clicked: ${transactionId}`);
-		appStore.selectTransactionForDetails(transactionId);
+	// --- Type Imports ---
+	import type { Transaction, Category, SortField } from '$lib/types/types'; // Adjust path if needed
+
+	// --- Helper Imports ---
+	import { formatCurrency } from '$lib/utils/helpers'; // Adjust path if needed
+
+	// --- Component Logic ---
+
+	/**
+	 * Handles clicking on a transaction item.
+	 * Calls the uiStore action to select the transaction for details view.
+	 * @param transactionId - The ID of the clicked transaction.
+	 */
+	function handleItemClick(transactionId: string | null) {
+		// Ensure we have a valid ID before calling the store action
+		if (transactionId) {
+			console.log(`[ExtractedDataDisplay] Item clicked: ${transactionId}`);
+			// --- Call action on the specific uiStore ---
+			uiStore.selectTransactionForDetails(transactionId);
+		} else {
+			console.warn('[ExtractedDataDisplay] Clicked item missing ID.');
+		}
 	}
 
-	const sortedFilteredTransactions = derived(appStore, ($appStore) => {
-		return appStore.getSortedFilteredTransactions();
-	});
+	// --- REMOVE Local Derived Store Definition ---
+	// The derived store is now imported and handles dependencies automatically
+	// const sortedFilteredTransactions = derived(appStore, ($appStore) => {
+	//     return appStore.getSortedFilteredTransactions();
+	// });
+
+	// No need for onDestroy as the derived store handles its own unsubscription
 </script>
 
 <div class="data-display-container">
 	<h4>Transactions ({$sortedFilteredTransactions.length} matching filters)</h4>
 
-	{#if $sortedFilteredTransactions.length === 0}{:else}
+	{#if $sortedFilteredTransactions.length === 0}
+		<p class="no-transactions-placeholder">No transactions match the current filters.</p>
+	{:else}
 		<ul class="transaction-list">
 			{#each $sortedFilteredTransactions as txn (txn.id)}
 				<button
@@ -28,14 +51,16 @@
 					on:click={() => handleItemClick(txn.id)}
 					aria-label="View details for transaction on {txn.date} for {txn.description} amount {formatCurrency(
 						txn.amount,
-						txn.currency // <-- Pass currency here too for accessibility
+						txn.currency
 					)}"
 				>
 					<div class="date">{txn.date === 'unknown' ? 'Date?' : txn.date}</div>
 					<div class="desc">{txn.description === 'unknown' ? 'Description?' : txn.description}</div>
 					<div class="amount {txn.direction === 'out' ? 'expense-amount' : 'income-amount'}">
 						{formatCurrency(txn.amount, txn.currency)}
-						{txn.direction !== 'unknown' ? ` (${txn.direction})` : ''}
+						{#if txn.direction && txn.direction !== 'unknown'}
+							<span class="direction">({txn.direction})</span>
+						{/if}
 					</div>
 				</button>
 			{/each}
@@ -50,11 +75,11 @@
 		border-radius: 6px;
 		padding: 15px 20px;
 		background-color: #ffffff;
-		height: 60vh;
+		height: 60vh; /* Consider using max-height or letting content define height */
 		min-height: 400px;
 		display: flex;
 		flex-direction: column;
-		overflow-y: auto;
+		overflow-y: auto; /* Enable scrolling */
 		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 	}
 	h4 {
@@ -65,16 +90,27 @@
 		padding-bottom: 10px;
 		font-size: 1.1em;
 		font-weight: 600;
+		flex-shrink: 0; /* Prevent header from shrinking */
 	}
-
+	.no-transactions-placeholder {
+		text-align: center;
+		color: #aaa;
+		margin-top: 20px;
+		font-style: italic;
+		flex-grow: 1; /* Allow placeholder to take space */
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
 	.transaction-list {
 		list-style: none;
 		padding: 0;
 		margin: 0;
-		flex-grow: 1;
+		flex-grow: 1; /* Allow list to take remaining space */
+		overflow-y: auto; /* Ensure list itself can scroll if needed, though container scrolls */
 	}
 	.transaction-item {
-		display: block;
+		display: block; /* Use block for button */
 		width: 100%;
 		text-align: left;
 		background: none;
@@ -83,7 +119,7 @@
 		padding: 12px 5px;
 		font-size: 14px;
 		font-family: inherit;
-		color: inherit;
+		color: inherit; /* Inherit text color */
 	}
 	.transaction-item:last-child {
 		border-bottom: none;
@@ -95,7 +131,7 @@
 	}
 	.transaction-item.interactive:hover,
 	.transaction-item.interactive:focus-visible {
-		background-color: #eaf2f8;
+		background-color: #eaf2f8; /* Light blue hover */
 		outline: 1px solid #aed6f1;
 		outline-offset: -1px;
 	}
@@ -116,10 +152,16 @@
 		font-size: 1.05em;
 	}
 	.amount.income-amount {
-		color: #27ae60;
+		color: #27ae60; /* Green */
 	}
 	.amount.expense-amount {
-		color: #c0392b;
+		color: #c0392b; /* Red */
 	}
-
+	.direction {
+		font-size: 0.85em;
+		font-weight: normal;
+		margin-left: 5px;
+		color: #6c757d; /* Grey */
+		font-style: italic;
+	}
 </style>

@@ -7,13 +7,13 @@
 	// Recreate derived stats locally - Updated transactionCount logic
 	const processingStats = derived(appStore, ($appStore) => {
 		const chunks = $appStore.bulkProcessing.processingChunks;
-		const successChunks = chunks.filter((c) => c.status === 'success'); // Filter successful chunks
-		const errorChunks = chunks.filter((c) => c.status === 'error').length;
+		const successChunks = chunks.filter((c: { status: string; }) => c.status === 'success'); // Filter successful chunks
+		const errorChunks = chunks.filter((c: { status: string; }) => c.status === 'error').length;
 		const pendingChunks = chunks.filter(
-			(c) => c.status === 'pending' || c.status === 'processing'
+			(c: { status: string }) => c.status === 'pending' || c.status === 'processing'
 		).length;
 		// --- Calculate count from successful chunks ---
-		const transactionCount = successChunks.reduce((sum, chunk) => sum + chunk.transactionCount, 0);
+		const transactionCount = successChunks.reduce((sum: any, chunk: { transactionCount: any; }) => sum + chunk.transactionCount, 0);
 		return {
 			totalChunks: chunks.length,
 			successChunks: successChunks.length, // Use length here
@@ -24,13 +24,13 @@
 		};
 	});
 
-	// --- REMOVE completeAndAddTransactions function ---
-	// async function completeAndAddTransactions() { ... }
+	// --- REMOVE completeAndtransactions.add function ---
+	// async function completeAndtransactions.add() { ... }
 
-	// Function to close the UI (replaces completeAndAddTransactions)
+	// Function to close the UI (replaces completeAndtransactions.add)
 	function closeProcessingUI() {
 		// Just finalize/clear the bulk UI state
-		appStore.finalizeBulkProcessing(true); // Indicate normal completion
+		appStore.bulkProcessing.finalize(true); // Indicate normal completion
 	}
 
 	// Function to cancel processing (logic remains the same)
@@ -41,7 +41,7 @@
 			)
 		) {
 			// Added warning
-			appStore.finalizeBulkProcessing(false); // Indicate cancellation
+			appStore.bulkProcessing.finalize(false); // Indicate cancellation
 		}
 	}
 </script>

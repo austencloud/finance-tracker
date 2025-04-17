@@ -125,7 +125,7 @@ export async function processBulkTransactions(
 
 					// Add successfully extracted transactions to the store
 					if (finalTransactions.length > 0) {
-						appStore.addTransactions(finalTransactions);
+						appStore.transactions.add(finalTransactions);
 						didAnyChunkSucceed = true; // Mark that at least one chunk succeeded
 					}
 
@@ -165,8 +165,8 @@ export async function processBulkTransactions(
 		// Handle critical errors in the orchestrator itself (e.g., chunking failure)
 		console.error('[processBulkTransactions] Critical orchestrator error:', error);
 		// Ensure bulk processing UI state is cleaned up
-		appStore.finalizeBulkProcessing(false); // Indicate failure
+		appStore.conversation.finalizeBulkProcessing(false); // Indicate failure
 		return false; // Indicate failure
 	}
-	// Note: finalizeBulkProcessing is called by the UI component when the user clicks "Done"
+	// Note: conversation.finalizeBulkProcessing is called by the UI component when the user clicks "Done"
 }

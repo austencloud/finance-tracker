@@ -1,9 +1,10 @@
-import { appStore } from '$lib/stores/AppStore';
+import { conversationStore } from '$lib/stores/conversationStore';
+import { transactionStore } from '$lib/stores/transactionStore';
 import { get } from 'svelte/store';
 import type { Transaction } from '$lib/types/types';
 
 function clearDuplicateConfirmationState(): void {
-	appStore._setConversationInternalState({
+	conversationStore._setInternalState({
 		waitingForDuplicateConfirmation: false,
 		pendingDuplicateTransactions: [],
 		lastUserMessageText: '',
@@ -15,7 +16,7 @@ export async function handleDuplicateConfirmation(
 	message: string,
 	explicitDirectionIntent: 'in' | 'out' | null
 ): Promise<{ handled: boolean; response?: string }> {
-	const internalState = get(appStore).conversation._internal;
+	const internalState = get(conversationStore)._internal;
 
 	if (!internalState.waitingForDuplicateConfirmation) {
 		return { handled: false };
@@ -34,7 +35,7 @@ export async function handleDuplicateConfirmation(
 		console.log('[DuplicateConfirmationHandler] User confirmed adding duplicates.');
 
 		if (pendingTransactions.length > 0) {
-			appStore.addTransactions(pendingTransactions);
+			transactionStore.add(pendingTransactions);
 			clearDuplicateConfirmationState();
 			return {
 				handled: true,

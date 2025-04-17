@@ -70,7 +70,7 @@ describe('AI Extraction Flow Integration', () => {
 
 		// Reset appStore state using its public actions
 		appStore.clearTransactions(); // Uses the action (and the confirm mock)
-		appStore.resetConversation(); // Uses the action to reset conversation state
+		appStore.conversation.reset(); // Uses the action to reset conversation state
 		appStore.setAnalysisResults(null); // Use action to clear analysis results
 		// No need to manually reset loading/error if setAnalysisResults handles it
 
@@ -137,20 +137,20 @@ describe('AI Extraction Flow Integration', () => {
 		const coffeeTxn = storeTransactions.find((t) => t.description === 'Coffee Shop');
 		expect(coffeeTxn, 'Coffee transaction should be found').toBeDefined();
 		expect(coffeeTxn?.amount).toBe(5.75);
-		// Adapt based on how your addTransactions or parser handles case
+		// Adapt based on how your transactions.add or parser handles case
 		expect(coffeeTxn?.direction?.toLowerCase()).toBe('out');
 
 		const paycheckTxn = storeTransactions.find((t) => t.description === 'Paycheck');
 		expect(paycheckTxn, 'Paycheck transaction should be found').toBeDefined();
 		expect(paycheckTxn?.amount).toBe(1500.0);
-		// Adapt based on how your addTransactions or parser handles case
+		// Adapt based on how your transactions.add or parser handles case
 		expect(paycheckTxn?.direction?.toLowerCase()).toBe('in');
 
 		// Verify analysis was triggered (check if mocks were called)
 		// Note: This assumes analysis services are mocked as shown earlier
 		// You might need to await the import inside the test or ensure mocks are readily available
 		const analyticsMock = await vi.importMock('$lib/services/analytics');
-		// Check if analysis functions were called (due to addTransactions triggering analysis)
+		// Check if analysis functions were called (due to transactions.add triggering analysis)
 		expect(analyticsMock.calculateFinancialSummary).toHaveBeenCalled();
 		// Depending on isOllamaAvailable mock, these might or might not be called
 		expect(analyticsMock.detectAnomalies).toHaveBeenCalled();

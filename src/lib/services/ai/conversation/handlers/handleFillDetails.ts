@@ -1,25 +1,18 @@
 // src/lib/services/ai/conversation/handlers/handleFillDetails.ts
 import { get } from 'svelte/store';
-import { appStore } from '$lib/stores/AppStore'; // *** Import central appStore ***
-// --- REMOVE old store imports ---
-// import { extractedTransactions } from '../conversationDerivedStores';
-// import { conversationStore } from '../conversationStore';
-
-// --- Keep other necessary imports ---
-import { llmChat, getLLMFallbackResponse } from '../../llm-helpers';
-import { getExtractionPrompt, getSystemPrompt } from '../../prompts'; // May need specific prompts
-import {
-	// applyExplicitDirection, // Not used in placeholder
-	parseJsonFromAiResponse
-	// textLooksLikeTransaction // Not used in placeholder
-} from '$lib/utils/helpers';
-// Import Transaction type if needed for future implementation
-import type { Transaction } from '$lib/types/types';
+// --- Import specific stores ---
+import { conversationStore } from '$lib/stores/conversationStore';
+import { transactionStore } from '$lib/stores/transactionStore';
+// --- Import Types ---
+import type { Transaction } from '$lib/types/types'; // Adjust path if needed
+// --- Import Helpers / Services ---
+// Removed unused imports like llmChat, prompts, parser, etc. as this is a placeholder
+import { getLLMFallbackResponse } from '../../llm-helpers'; // Keep for potential error handling
 
 /**
  * Handles requests to fill in missing details (like category, date) for specific or all transactions.
  * Example: "Categorize these", "What was the date for the Amazon purchase?", "Fill in missing dates".
- * (Placeholder - Requires more complex logic for identifying target transactions)
+ * (Placeholder - Requires more complex logic for identifying target transactions and details)
  *
  * @param message The user's input message.
  * @param explicitDirectionIntent Optional direction hint (ignored by this handler currently).
@@ -30,18 +23,20 @@ export async function handleFillDetails(
 	explicitDirectionIntent: 'in' | 'out' | null // Keep signature consistent
 ): Promise<{ handled: boolean; response?: string }> {
 	const lowerMessage = message.toLowerCase().trim();
-	const keywords = ['categorize', 'category', 'fill in', 'details', 'date for', 'missing'];
+	// Keywords to detect intent to fill details
+	const keywords = ['categorize', 'category', 'fill in', 'details', 'date for', 'missing', 'what was the'];
 
+	// If message doesn't contain relevant keywords, let other handlers try
 	if (!keywords.some((k) => lowerMessage.includes(k))) {
 		return { handled: false };
 	}
 
-	// --- Read transactions from the central appStore ---
-	const currentTransactions = get(appStore).transactions;
+	// --- Read transactions directly from transactionStore state ---
+	const currentTransactions = get(transactionStore); // Corrected access
 
-	// Check if the main store has transactions
+	// Check if there are any transactions to work with
 	if (!Array.isArray(currentTransactions) || currentTransactions.length === 0) {
-		// Provide a response since the keywords were matched, but there's nothing to process
+		// Respond since keywords matched, but there's nothing to process
 		return {
 			handled: true,
 			response: "I don't have any transactions recorded yet to fill in details for."
@@ -49,54 +44,82 @@ export async function handleFillDetails(
 	}
 
 	console.log('[FillDetailsHandler] Detected request to fill details (Placeholder).');
-	// --- Use appStore action for status update ---
-	appStore.setConversationStatus('Attempting to fill details...', 40);
+	// --- Use conversationStore action for status update ---
+	conversationStore.setStatus('Analyzing detail request...', 40);
 
 	// --- Placeholder Logic ---
-	// This is complex. It needs to:
-	// 1. Understand *which* transactions the user is referring to (e.g., "the Amazon one", "the last 3", "all of them").
-	// 2. Understand *what* details need filling (category, date, description refinement?).
-	// 3. Potentially call the AI to infer missing details based on context.
-	// 4. Update the specific transactions in the appStore using appStore.updateTransaction().
+	// This handler requires significant implementation:
+	// 1. Identify Target Transaction(s): Use LLM or regex to figure out which transaction(s)
+	//    the user means (e.g., "the Amazon one", "last 3", "all uncategorized").
+	// 2. Identify Target Field(s): Determine if the user wants date, category, description, etc.
+	// 3. Fetch/Infer Data: Potentially call LLM with transaction context to guess missing info.
+	//    For categorization, call the categorization service/logic.
+	// 4. Update Transaction(s): Use transactionStore.update(updatedTxn).
 
-	// Example: Simple case - "Categorize all"
+	// Example: Simple placeholder for "Categorize all"
 	if (lowerMessage.includes('categorize all') || lowerMessage.includes('categorise all')) {
-		// TODO: Implement actual categorization logic (likely involves AI call per transaction or batch)
-		// --- Use appStore action for status update ---
-		appStore.setConversationStatus('Categorization not implemented', 100);
+		// TODO: Implement actual categorization logic for all transactions
+		// This would likely involve iterating 'currentTransactions', calling
+		// the categorization logic (maybe LLM-based) for each, and then
+		// calling transactionStore.update() for each modified transaction.
+		console.log('[FillDetailsHandler] Auto-categorization requested (Not Implemented).');
+		conversationStore.setStatus('Auto-categorization not implemented', 100);
 		return {
 			handled: true,
 			response: "Sorry, automatically categorizing all transactions isn't fully implemented yet."
 		};
 	}
 
-	// Fallback for other requests until implemented
-	// --- Use appStore action for status update ---
-	appStore.setConversationStatus('Detail filling not implemented', 100);
+	// Fallback response for other unhandled detail-filling requests
+	console.log('[FillDetailsHandler] Specific detail filling not implemented.');
+	conversationStore.setStatus('Detail filling not implemented', 100);
 	return {
-		handled: true, // Mark as handled so it doesn't fall through
+		handled: true, // Mark as handled to prevent fallback to normal response
 		response:
-			"Sorry, I can't automatically fill in those details just yet. You can manually edit the transactions."
+			"Sorry, I can't automatically fill in those specific details just yet. You can click on a transaction to edit it manually."
 	};
 
-	// --- Potential Future Implementation ---
+	// --- Potential Future Implementation Structure ---
 	/*
-    try {
-        // 1. Identify target transactions from get(appStore).transactions
-        // 2. Prepare prompt for AI
-        // 3. Call AI (llmChat)
-        // 4. Parse response
-        // 5. Update transaction(s) using appStore.updateTransaction(updatedTxn)
-        // 6. Formulate response
+	try {
+		// 1. Identify target transactions (e.g., findTransactionTargets(message, currentTransactions))
+		const targetTxns = []; // Placeholder
 
-        appStore.setConversationStatus('Details updated', 100);
-        return { handled: true, response: "Okay, I've attempted to fill in the details." };
+		// 2. Identify field(s) to fill (e.g., getFieldsToFill(message))
+		const fields = []; // Placeholder
 
-    } catch (error) {
-        console.error('[FillDetailsHandler] Error:', error);
-        appStore.setConversationStatus('Error filling details');
-        const errorMsg = getLLMFallbackResponse(error instanceof Error ? error : undefined);
-        return { handled: true, response: errorMsg };
-    }
-    */
+		if (targetTxns.length > 0 && fields.length > 0) {
+			conversationStore.setStatus('Inferring details...', 60);
+
+			// 3. Loop through targets and infer/update
+			for (const txn of targetTxns) {
+				let updates = {};
+				// if (fields.includes('category')) {
+				//     updates.category = await inferCategory(txn); // Example async call
+				// }
+				// if (fields.includes('date')) {
+				//     updates.date = await inferDate(txn, message); // Example async call
+				// }
+				// ... other fields ...
+
+				if (Object.keys(updates).length > 0) {
+                    // 4. Update using transactionStore action
+					transactionStore.update({ ...txn, ...updates });
+				}
+			}
+			conversationStore.setStatus('Details updated', 100);
+			return { handled: true, response: "Okay, I've attempted to fill in the missing details." };
+		} else {
+             // Could not identify targets or fields
+             return { handled: true, response: "I understand you want to fill details, but I'm not sure which transaction or what specific detail you mean."};
+        }
+
+	} catch (error) {
+		console.error('[FillDetailsHandler] Error:', error);
+		conversationStore.setStatus('Error filling details');
+		const errorMsg = getLLMFallbackResponse(error instanceof Error ? error : undefined);
+		return { handled: true, response: errorMsg };
+	}
+	*/
 }
+

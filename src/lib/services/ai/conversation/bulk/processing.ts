@@ -38,7 +38,7 @@ export async function enhancedBackgroundProcessing(message: string) {
 	if (get(appStore).conversation.isProcessing) {
 		console.warn('[enhancedBackgroundProcessing] Already processing, ignoring request.');
 		// Optionally add message via appStore action
-		// appStore.addConversationMessage('assistant', "I'm still working...");
+		// appStore.conversation.addMessage('assistant', "I'm still working...");
 		return {
 			handled: true,
 			response: "I'm still working on the previous batch. Please wait." // Keep immediate response
@@ -47,35 +47,35 @@ export async function enhancedBackgroundProcessing(message: string) {
 
 	console.log('[enhancedBackgroundProcessing] Starting enhanced processing...');
 	// --- Set processing state via appStore action ---
-	appStore.setConversationProcessing(true);
-	appStore.setConversationStatus('Chunking transaction data...', 5);
+	appStore.conversation.setProcessing(true);
+	appStore.conversation.setStatus('Chunking transaction data...', 5);
 
 	const immediateResponse = `I'll process these transactions in chunks and show you results as they come in. This should be much faster!`;
 	// Add the immediate response to the chat via appStore
-	appStore.addConversationMessage('assistant', immediateResponse);
+	appStore.conversation.addMessage('assistant', immediateResponse);
 
 	// Start Background Task (setTimeout remains useful for async execution)
 	setTimeout(async () => {
 		let successfullyAddedTransactions: Transaction[] = []; // Keep track of txns added in this run
 		try {
 			// --- Step 1: Chunk the data ---
-			appStore.setConversationStatus('Identifying transaction chunks...', 10);
+			appStore.conversation.setStatus('Identifying transaction chunks...', 10);
 			await tick(); // Keep tick if needed for UI updates between stages
 
 			const chunks = await llmChunkTransactions(message);
 			if (chunks.length === 0) {
-				appStore.addConversationMessage(
+				appStore.conversation.addMessage(
 					'assistant',
 					"I couldn't identify any clear transactions in your text. Could you try a different format?"
 				);
-				appStore.setConversationProcessing(false); // Reset processing state
-				appStore.setConversationStatus('', 0);
+				appStore.conversation.setProcessing(false); // Reset processing state
+				appStore.conversation.setStatus('', 0);
 				return;
 			}
 
 			const totalChunks = chunks.length;
 			console.log(`[enhancedBackgroundProcessing] Split data into ${totalChunks} chunks`);
-			appStore.setConversationStatus(`Processing ${totalChunks} chunks...`, 15);
+			appStore.conversation.setStatus(`Processing ${totalChunks} chunks...`, 15);
 			await tick();
 
 			let completedChunks = 0;
@@ -85,7 +85,7 @@ export async function enhancedBackgroundProcessing(message: string) {
 			const PARALLEL_BATCH_SIZE = 5;
 			const batchCount = Math.ceil(chunks.length / PARALLEL_BATCH_SIZE);
 
-			appStore.addConversationMessage(
+			appStore.conversation.addMessage(
 				'assistant',
 				`Starting to process ${chunks.length} transaction chunks...`
 			);
@@ -96,7 +96,7 @@ export async function enhancedBackgroundProcessing(message: string) {
 				const currentBatchChunks = chunks.slice(batchStart, batchEnd);
 
 				const currentProgress = 15 + Math.round((batchIndex / batchCount) * 70);
-				appStore.setConversationStatus(
+				appStore.conversation.setStatus(
 					`Processing batch ${batchIndex + 1}/${batchCount}...`,
 					currentProgress
 				);
@@ -108,9 +108,9 @@ export async function enhancedBackgroundProcessing(message: string) {
 						const newTransactions = chunkResult || [];
 						if (newTransactions.length > 0) {
 							// --- Add directly to appStore ---
-							// Note: appStore.addTransactions handles internal deduplication by ID
+							// Note: appStore.transactions.add handles internal deduplication by ID
 							// and triggers analysis run
-							appStore.addTransactions(newTransactions);
+							appStore.transactions.add(newTransactions);
 							successfullyAddedTransactions.push(...newTransactions); // Track added ones for final summary
 							anyChunkSucceeded = true;
 						}
@@ -133,12 +133,12 @@ export async function enhancedBackgroundProcessing(message: string) {
 				if (batchIndex < batchCount - 1) {
 					const progressPct = Math.round((completedChunks / totalChunks) * 100);
 					if (transactionsInBatch > 0) {
-						appStore.addConversationMessage(
+						appStore.conversation.addMessage(
 							'assistant',
 							`Progress update: Found ${transactionsInBatch} more transaction(s) in batch ${batchIndex + 1}. (${progressPct}% complete)`
 						);
 					} else {
-						appStore.addConversationMessage(
+						appStore.conversation.addMessage(
 							'assistant',
 							`Progress update: Processed batch ${batchIndex + 1}. (${progressPct}% complete)`
 						);
@@ -148,10 +148,10 @@ export async function enhancedBackgroundProcessing(message: string) {
 			}
 
 			// --- Step 3: Finalize results ---
-			appStore.setConversationStatus('Finalizing results...', 95);
+			appStore.conversation.setStatus('Finalizing results...', 95);
 			await tick();
 
-			// NOTE: Deduplication across batches is handled by appStore.addTransactions's ID check.
+			// NOTE: Deduplication across batches is handled by appStore.transactions.add's ID check.
 			// uniqueTransactions now refers only to the ones *successfully added* in this run.
 			const uniqueTransactions = deduplicateTransactions(successfullyAddedTransactions); // Still useful for the summary message
 
@@ -166,20 +166,20 @@ export async function enhancedBackgroundProcessing(message: string) {
 				finalMessage = `I finished processing but couldn't extract any new valid transactions to add. The format might not be recognized or they might be duplicates.`;
 			}
 
-			appStore.addConversationMessage('assistant', finalMessage);
+			appStore.conversation.addMessage('assistant', finalMessage);
 		} catch (error) {
 			console.error('[enhancedBackgroundProcessing] Unhandled error:', error);
-			appStore.addConversationMessage(
+			appStore.conversation.addMessage(
 				'assistant',
 				'Sorry, I ran into a problem while processing your transactions. Please try again.'
 			);
-			appStore.setConversationStatus('Error');
+			appStore.conversation.setStatus('Error');
 		} finally {
 			// --- Reset processing state via appStore ---
-			appStore.setConversationProcessing(false);
+			appStore.conversation.setProcessing(false);
 			// Keep status as Error if it was set, otherwise clear
 			if (get(appStore).conversation.status !== 'Error') {
-				appStore.setConversationStatus('', 0);
+				appStore.conversation.setStatus('', 0);
 			}
 		}
 	}, 50); // Keep setTimeout for async execution off the main thread

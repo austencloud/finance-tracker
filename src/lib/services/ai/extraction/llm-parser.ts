@@ -53,7 +53,7 @@ export function parseTransactionsFromLLMResponse(raw: string, batchId: string): 
 		type: o.type ?? 'unknown',
 		amount: typeof o.amount === 'number' ? o.amount : parseFloat(o.amount) || 0,
 		currency: o.currency?.toUpperCase() ?? 'USD', // Keep currency handling
-		// Ensure category logic is appropriate (maybe move to AppStore.addTransactions?)
+		// Ensure category logic is appropriate (maybe move to AppStore.transactions.add?)
 		category: o.category ?? 'Other / Uncategorized',
 		notes: o.details ?? '',
 		direction: o.direction ?? 'unknown'

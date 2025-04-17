@@ -1,25 +1,30 @@
 <script lang="ts">
-	// 1. Import the central store and necessary types
-	import { appStore } from '$lib/stores/AppStore';
-	import type { ConversationMessage } from '$lib/types/types'; // Assuming type is here
 	import { onMount, onDestroy } from 'svelte';
-	// Removed unused 'get' import
+	// --- Import specific store ---
+	// import { appStore } from '$lib/stores/AppStore'; // REMOVE old import
+	import { conversationStore } from '$lib/stores/conversationStore'; // ADD specific store import
 
-	let messagesContainer: HTMLElement;
-	let autoScroll = true;
-	let unsub: () => void; // Unsubscriber function for appStore
+	// --- Import Types ---
+	import type { ConversationMessage } from '$lib/types/types'; // Adjust path if needed
 
-	// 2. Access conversation state directly from appStore reactively
-	// No need for explicit casting 'as ...' if appStore is properly typed
-	$: messages = $appStore.conversation.messages;
-	$: status = $appStore.conversation.status;
-	$: processing = $appStore.conversation.isProcessing;
+	// --- Local Component State & Refs ---
+	let messagesContainer: HTMLElement; // Reference to the scrollable container
+	let autoScroll = true; // Flag to control automatic scrolling
+	let unsub: () => void; // Function to unsubscribe from the store
 
-	// Basic utility to HTML-escape and format code blocks, bold, italic, etc.
+	// --- Reactive State derived from conversationStore ---
+	// Use the $ prefix for reactive access to store values
+	$: messages = $conversationStore.messages;
+	$: status = $conversationStore.status;
+	$: processing = $conversationStore.isProcessing;
+
+	// --- Utility Functions ---
+
+	// Formats message content with basic Markdown (bold, italic, code blocks, lists)
 	function formatMessage(content: string): string {
 		try {
 			let formatted = content || '';
-			// Basic HTML escaping
+			// Basic HTML escaping (important first step)
 			formatted = formatted
 				.replace(/&/g, '&amp;')
 				.replace(/</g, '&lt;')
@@ -27,18 +32,15 @@
 				.replace(/"/g, '&quot;')
 				.replace(/'/g, '&#039;');
 
-			// Code blocks ```...``` - Capture content, escape it, then wrap
-			// Ensure multiline and special chars inside code blocks are handled
+			// Code blocks ```...```
 			formatted = formatted.replace(/```([\s\S]*?)```/g, (match, code) => {
-				// Escape HTML within the code block *after* capturing it
 				const escapedCode = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-				return `<pre class="code-block"><code>${escapedCode}</code></pre>`; // Wrap in <code>
+				return `<pre class="code-block"><code>${escapedCode}</code></pre>`;
 			});
 
 			// Bold **...**
 			formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-			// Italic _..._ or *...* (ensure not interfering with bold)
-			// Match single underscores/asterisks not adjacent to others
+			// Italic _..._ or *...* (more robust matching)
 			formatted = formatted.replace(
 				/(?<![a-zA-Z0-9*])\*(?![* ])(.*?)(?<![ *])\*(?![a-zA-Z0-9*])/g,
 				'<em>$1</em>'
@@ -50,35 +52,25 @@
 
 			// Basic Lists (simple implementation)
 			// Unordered lists
-			formatted = formatted.replace(/^\s*-\s+(.*)/gm, '<li>$1</li>'); // Convert lines starting with '-'
-			// Wrap list items only if they aren't already wrapped (lookbehind assertion)
-			formatted = formatted.replace(/(?<!<ul>\s*)(<li>.*?<\/li>)/gs, (match, liBlock) => {
-				// Check if the block is already within a <ul> or <ol> context nearby if needed
-				return `<ul>${liBlock}</ul>`; // Simple wrap for now
-			});
-			formatted = formatted.replace(/<\/ul>\s*<ul>/g, ''); // Merge adjacent lists
+			formatted = formatted.replace(/^\s*[-*+]\s+(.*)/gm, '<li>$1</li>'); // Handle -, *, +
+			formatted = formatted.replace(/(?<!<ul>\s*)(<li>.*?<\/li>)/gs, '<ul>$1</ul>');
+			formatted = formatted.replace(/<\/ul>\s*<ul>/g, ''); // Merge adjacent
 
-			// Ordered lists (simple implementation - doesn't handle nested or complex numbering)
-			formatted = formatted.replace(/^\s*\d+\.\s+(.*)/gm, '<li>$1</li>'); // Convert lines starting with '1.', '2.' etc.
-			// Wrap list items only if they aren't already wrapped (lookbehind assertion)
-			formatted = formatted.replace(/(?<!<ol>\s*)(<li>.*?<\/li>)/gs, (match, liBlock) => {
-				// Check if the block is already within a <ul> or <ol> context nearby if needed
-				return `<ol>${liBlock}</ol>`; // Simple wrap for now
-			});
-			formatted = formatted.replace(/<\/ol>\s*<ol>/g, ''); // Merge adjacent lists
+			// Ordered lists
+			formatted = formatted.replace(/^\s*\d+\.\s+(.*)/gm, '<li>$1</li>');
+			formatted = formatted.replace(/(?<!<ol>\s*)(<li>.*?<\/li>)/gs, '<ol>$1</ol>');
+			formatted = formatted.replace(/<\/ol>\s*<ol>/g, ''); // Merge adjacent
 
-			// Convert newlines to <br> tags *outside* of pre blocks
-			const parts = formatted.split(/(<pre[\s\S]*?<\/pre>)/);
+			// Convert remaining newlines to <br>, avoiding those inside lists/code
+			const parts = formatted.split(/(<(?:pre|ul|ol)[\s\S]*?<\/(?:pre|ul|ol)>)/);
 			formatted = parts
 				.map((part, index) => {
 					if (index % 2 === 1) {
-						// It's a <pre> block
+						// It's a pre, ul, or ol block
 						return part;
 					} else {
 						// It's regular text
-						// Avoid converting newlines immediately after closing list tags or before opening ones
-						// to prevent extra space around lists.
-						return part.replace(/(?<!(<\/ul>|<\/ol>))\n(?!\s*(<ul>|<ol>|<li>))/g, '<br>');
+						return part.replace(/\n/g, '<br>');
 					}
 				})
 				.join('');
@@ -86,44 +78,43 @@
 			return formatted;
 		} catch (e) {
 			console.error('[LLMMessageList] Error in formatMessage:', e);
-			// Return escaped original content on error? Or a fixed error message.
-			return 'Error formatting message.';
+			return 'Error formatting message.'; // Fallback
 		}
 	}
 
+	// Updates the autoScroll flag based on user scroll position
 	function handleScroll() {
 		if (messagesContainer) {
 			const { scrollTop, scrollHeight, clientHeight } = messagesContainer;
-			// Determine if the user is close to the bottom
-			const isScrolledToBottom = scrollHeight - scrollTop - clientHeight < 50; // Threshold of 50px
+			// User is considered at the bottom if scroll position is within 50px of the end
+			const isScrolledToBottom = scrollHeight - scrollTop - clientHeight < 50;
 			autoScroll = isScrolledToBottom;
 		}
 	}
 
+	// --- Lifecycle Hooks ---
 	onMount(() => {
-		// 3. Subscribe to the main appStore to react to changes (specifically for scrolling)
-		// The actual message rendering is handled by the reactive '$: messages' above
-		unsub = appStore.subscribe((currentState) => {
-			// We only need to scroll if autoScroll is enabled (user is near the bottom)
-			// and the container exists. The subscription triggers on *any* state change,
-			// but scrolling only happens if conditions are met.
+		// --- Subscribe only to conversationStore ---
+		// We need the subscription primarily to trigger scrolling when new messages arrive
+		unsub = conversationStore.subscribe((currentState) => {
+			// Check if auto-scroll is enabled and the container element exists
 			if (autoScroll && messagesContainer) {
-				// Use requestAnimationFrame to ensure scrolling happens after DOM updates
+				// Use requestAnimationFrame to ensure scrolling happens after the DOM updates
 				requestAnimationFrame(() => {
+					// Double-check container exists inside RAF callback
 					if (messagesContainer) {
-						// Double-check existence inside RAF
 						messagesContainer.scrollTop = messagesContainer.scrollHeight;
 					}
 				});
 			}
-			// Optional: could add logic here to only scroll if message count changed,
-			// but current approach is simpler and usually fine.
+			// Note: Rendering of messages, status, processing indicator is handled
+			// reactively by Svelte using $: variables above.
 		});
 
-		// Add scroll listener to manage the autoScroll flag
+		// Add scroll listener to the container to detect user scrolling
 		messagesContainer?.addEventListener('scroll', handleScroll);
 
-		// Initial scroll to bottom when component mounts
+		// Initial scroll to bottom when the component first mounts
 		if (messagesContainer) {
 			requestAnimationFrame(() => {
 				messagesContainer.scrollTop = messagesContainer.scrollHeight;
@@ -132,13 +123,16 @@
 	});
 
 	onDestroy(() => {
-		// 4. Unsubscribe from appStore
-		if (unsub) unsub();
+		// --- Unsubscribe from conversationStore ---
+		if (unsub) {
+			unsub();
+		}
+		// Clean up scroll listener
 		messagesContainer?.removeEventListener('scroll', handleScroll);
 	});
 </script>
 
-<div class="messages-container" bind:this={messagesContainer}>
+<div class="messages-container" bind:this={messagesContainer} on:scroll={handleScroll}>
 	{#each messages as message (message.id)}
 		<div class="message {message.role === 'user' ? 'user-message' : 'assistant-message'}">
 			<div class="message-header">
@@ -161,12 +155,10 @@
 			<div class="message-header">Assistant</div>
 			<div class="message-content">
 				<div class="typing-indicator">
-					<span></span>
-					<span></span>
-					<span></span>
+					<span></span><span></span><span></span>
 				</div>
-				{#if status && status !== 'Thinking...'}
-					<span style="margin-left: 8px; font-style: italic; color: #6c757d;">{status}</span>
+				{#if status && status !== 'Thinking…'}
+					<span class="thinking-status">{status}</span>
 				{/if}
 			</div>
 		</div>
@@ -174,6 +166,7 @@
 </div>
 
 <style>
+	/* Styles remain the same */
 	.messages-container {
 		flex-grow: 1;
 		overflow-y: auto;
@@ -182,7 +175,6 @@
 		flex-direction: column;
 		gap: 15px;
 		background-color: white;
-		/* Improve scrollbar appearance */
 		scrollbar-width: thin;
 		scrollbar-color: #adb5bd #f1f3f5;
 	}
@@ -195,77 +187,73 @@
 		position: relative;
 		font-size: 14px;
 		line-height: 1.4;
-		word-wrap: break-word; /* Ensure long words break */
+		word-wrap: break-word;
 	}
 	.user-message {
 		align-self: flex-end;
-		background-color: #d1eaff; /* Slightly softer blue */
+		background-color: #d1eaff;
 		color: #1c3d5a;
 		border-bottom-right-radius: 4px;
 	}
 	.assistant-message {
 		align-self: flex-start;
-		background-color: #f1f3f5; /* Standard light grey */
+		background-color: #f1f3f5;
 		color: #343a40;
 		border-bottom-left-radius: 4px;
 	}
 	.message-header {
 		font-size: 11px;
 		font-weight: bold;
-		margin-bottom: 4px; /* Slightly more space */
+		margin-bottom: 4px;
 		color: #6c757d;
 		text-transform: uppercase;
-		opacity: 0.8; /* De-emphasize slightly */
+		opacity: 0.8;
 	}
 	.message-content {
-		word-break: break-word; /* Already set on .message, but good fallback */
+		word-break: break-word;
 	}
-	/* Ensure lists inside messages look okay */
 	.message-content :global(ul),
 	.message-content :global(ol) {
-		padding-left: 25px; /* More standard indentation */
+		padding-left: 25px;
 		margin-top: 8px;
 		margin-bottom: 8px;
 	}
 	.message-content :global(li) {
-		margin-bottom: 4px; /* Space between list items */
+		margin-bottom: 4px;
 	}
-
-	/* Style for code blocks */
 	.message-content :global(pre.code-block) {
 		background-color: #e9ecef;
 		border: 1px solid #ced4da;
 		border-radius: 4px;
-		padding: 12px; /* More padding */
+		padding: 12px;
 		overflow-x: auto;
-		white-space: pre; /* Keep whitespace within code block */
-		margin: 10px 0; /* More vertical space */
-		font-family:
-			'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace; /* Better font stack */
+		white-space: pre;
+		margin: 10px 0;
+		font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
 		font-size: 13px;
-		line-height: 1.5; /* Better readability for code */
-		color: #212529; /* Darker text for contrast */
+		line-height: 1.5;
+		color: #212529;
 	}
 	.message-content :global(pre.code-block code) {
-		font-family: inherit; /* Inherit from pre */
+		font-family: inherit;
 		font-size: inherit;
-		background: none; /* Ensure no conflicting background */
+		background: none;
 		padding: 0;
+		/* Reset potential global code styles */
+		color: inherit;
+		white-space: inherit;
 	}
-	/* Styling for bold/italic */
 	.message-content :global(strong) {
-		font-weight: 600; /* Slightly bolder */
+		font-weight: 600;
 	}
 	.message-content :global(em) {
 		font-style: italic;
 	}
-	/* Add spacing after paragraphs/breaks */
 	.message-content :global(br) {
 		content: '';
 		display: block;
-		margin-bottom: 0.5em; /* Space after a line break */
+		margin-bottom: 0.5em;
 	}
-
 	.no-messages-placeholder {
 		text-align: center;
 		color: #aaa;
@@ -275,18 +263,17 @@
 	.thinking .message-content {
 		display: flex;
 		align-items: center;
-		/* height: 24px; /* Let height be natural */
-		padding-top: 8px; /* Adjust padding */
+		padding-top: 8px;
 		padding-bottom: 8px;
-		min-height: 24px; /* Ensure minimum height */
+		min-height: 24px;
 	}
 	.typing-indicator {
 		display: flex;
 		align-items: center;
-		gap: 5px; /* Slightly more gap */
+		gap: 5px;
 	}
 	.typing-indicator span {
-		height: 9px; /* Slightly larger dots */
+		height: 9px;
 		width: 9px;
 		background-color: #adb5bd;
 		border-radius: 50%;
@@ -309,8 +296,14 @@
 			opacity: 0.5;
 		}
 		50% {
-			transform: translateY(-5px); /* Slightly more bounce */
+			transform: translateY(-5px);
 			opacity: 1;
 		}
+	}
+	.thinking-status {
+		margin-left: 8px;
+		font-style: italic;
+		color: #6c757d;
+		font-size: 13px;
 	}
 </style>

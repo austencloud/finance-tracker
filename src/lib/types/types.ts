@@ -1,7 +1,7 @@
 import type {
-	FinancialSummary,
+	FinancialSummary as SchemaFinancialSummary,
 	AnomalyDetectionResult,
-	PredictionResult
+	PredictionResult as SchemaPredictionResult
 } from '$lib/schemas/AnalysisSchema';
 
 export type Category =
@@ -26,11 +26,11 @@ export type SplitBillContext = {
 export interface Transaction {
 	id: string;
 	batchId: string;
-	date: string;
+	date: string; // 'YYYY-MM-DD' or 'unknown'
 	description: string;
 	type: string;
 	amount: number;
-	currency: string;
+	currency: string; // e.g., "USD", "JPY", "BTC"
 	category: Category;
 	notes: string;
 	direction: 'in' | 'out' | 'unknown';
@@ -46,33 +46,35 @@ export interface ConversationMessage {
 
 export type UserMood = 'neutral' | 'frustrated' | 'chatty' | 'unknown';
 
+export interface ConversationInternalState {
+	initialPromptSent: boolean;
+	waitingForDirectionClarification: boolean;
+	clarificationTxnIds: string[];
+	lastUserMessageText: string;
+	lastExtractionBatchId: string | null;
+	waitingForDuplicateConfirmation?: boolean;
+	pendingDuplicateTransactions?: Transaction[];
+	waitingForCorrectionClarification?: boolean;
+	pendingCorrectionDetails?: {
+		originalMessage: string;
+		parsedField: 'amount' | 'date' | 'description' | 'category' | 'type' | 'notes';
+		parsedValue: any;
+		potentialTxnIds: string[];
+		potentialTxnDescriptions: string[];
+	} | null;
+	llmAvailable: boolean;
+	lastCorrectionTxnId?: string | null;
+	waitingForSplitBillShare?: boolean;
+	splitBillContext?: SplitBillContext;
+}
+
 export interface ConversationState {
 	messages: ConversationMessage[];
 	status: string;
 	isProcessing: boolean;
 	progress: number;
 	userMood: UserMood;
-	_internal: {
-		initialPromptSent: boolean;
-		waitingForDirectionClarification: boolean;
-		clarificationTxnIds: string[];
-		lastUserMessageText: string;
-		lastExtractionBatchId: string | null;
-		waitingForDuplicateConfirmation?: boolean;
-		pendingDuplicateTransactions?: Transaction[];
-		waitingForCorrectionClarification?: boolean;
-		pendingCorrectionDetails?: {
-			originalMessage: string;
-			parsedField: 'amount' | 'date' | 'description' | 'category' | 'type' | 'notes';
-			parsedValue: any;
-			potentialTxnIds: string[];
-			potentialTxnDescriptions: string[];
-		} | null;
-		llmAvailable: boolean;
-		lastCorrectionTxnId?: string | null;
-		waitingForSplitBillShare?: boolean;
-		splitBillContext?: SplitBillContext;
-	};
+	_internal: ConversationInternalState;
 }
 
 export interface CategoryTotals {
@@ -115,9 +117,44 @@ export interface BulkProcessingState {
 	isBulkProcessing: boolean;
 }
 
+// --- UPDATED Analysis-related Types ---
+
+export interface FinancialSummary {
+	totalIncome: number;
+	totalExpenses: number;
+	netCashflow: number;
+	savingsRate: number;
+	avgIncome: number;
+	avgExpense: number;
+	highestIncome: number;
+	highestExpense: number;
+	analysis?: string | null;
+	conversionErrors?: number;
+	// byCategory?: Record<string, number>;
+	// byMonth?: Record<string, number>;
+}
+
+export interface Anomaly {
+	index: number;
+	risk: 'low' | 'medium' | 'high';
+	reason: string;
+}
+
+export interface AnomalyResult {
+	anomalies: Anomaly[];
+}
+
+export interface PredictionResult {
+	projectedMonthlyNet: number;
+	predictedIncome: number;
+	predictedExpenses: number;
+	reliability: 'none' | 'low' | 'medium' | 'high';
+	message: string;
+}
+
 export interface AnalysisState {
 	summary: FinancialSummary | null;
-	anomalies: AnomalyDetectionResult | null;
+	anomalies: AnomalyResult | null;
 	predictions: PredictionResult | null;
 	loading: boolean;
 	error: string | null;

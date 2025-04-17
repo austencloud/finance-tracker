@@ -34,6 +34,8 @@ export async function calculateFinancialSummary(txns: Transaction[]) {
 	let conversionErrors = 0;
 	const byCategory: Record<string, number> = {};
 	const byMonth: Record<string, number> = {};
+	const incomeArr: number[] = [];
+	const expenseArr: number[] = [];
 
 	for (const t of txns) {
 		const amountInBase = await getAmountInBase(t);
@@ -48,8 +50,10 @@ export async function calculateFinancialSummary(txns: Transaction[]) {
 		// --- Use converted amounts for calculations ---
 		if (t.direction === 'in') {
 			income += Math.abs(amountInBase);
+			incomeArr.push(Math.abs(amountInBase));
 		} else if (t.direction === 'out') {
 			expense += Math.abs(amountInBase);
+			expenseArr.push(Math.abs(amountInBase));
 		}
 
 		if (t.category) {
@@ -68,6 +72,14 @@ export async function calculateFinancialSummary(txns: Transaction[]) {
 
 	const net = income - expense;
 	const savingsRate = income === 0 ? 0 : +(100 * (net / income)).toFixed(1);
+	const avgIncome = incomeArr.length
+		? +(incomeArr.reduce((a, b) => a + b, 0) / incomeArr.length).toFixed(2)
+		: 0;
+	const avgExpense = expenseArr.length
+		? +(expenseArr.reduce((a, b) => a + b, 0) / expenseArr.length).toFixed(2)
+		: 0;
+	const highestIncome = incomeArr.length ? Math.max(...incomeArr) : 0;
+	const highestExpense = expenseArr.length ? Math.max(...expenseArr) : 0;
 
 	// Log errors if any occurred
 	if (conversionErrors > 0) {
@@ -78,10 +90,15 @@ export async function calculateFinancialSummary(txns: Transaction[]) {
 
 	// Return results in BASE_CURRENCY
 	return {
-		income,
-		expense,
-		net,
+		totalIncome: income,
+		totalExpenses: expense,
+		netCashflow: net,
+		avgIncome,
+		avgExpense,
+		highestIncome,
+		highestExpense,
 		savingsRate, // %
+		analysis: null,
 		byCategory,
 		byMonth,
 		conversionErrors // Optionally return error count
@@ -162,22 +179,19 @@ export async function predictFutureTransactions(txns: Transaction[]) {
 	let conversionErrors = 0;
 
 	for (const t of txns) {
-		if (t.date === 'unknown' || !/^\d{4}-\d{2}-\d{2}$/.test(t.date)) {
-			continue; // Skip transactions without valid date
-		}
+		if (t.date === 'unknown' || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(t.date)) continue;
 		const amountInBase = await getAmountInBase(t);
 		if (amountInBase === null) {
 			conversionErrors++;
-			continue; // Skip if conversion failed
+			continue;
 		}
-
 		const signedAmountInBase = (t.direction === 'out' ? -1 : 1) * Math.abs(amountInBase);
-		const key = t.date.slice(0, 7); // YYYY-MM
+		const key = t.date.slice(0, 7);
 		buckets[key] = (buckets[key] ?? 0) + signedAmountInBase;
 	}
 
 	const monthlyTotals = Object.values(buckets);
-	if (monthlyTotals.length < 2) return null; // nothing to extrapolate
+	if (monthlyTotals.length < 2) return null;
 
 	const avg = +(monthlyTotals.reduce((s, v) => s + v, 0) / monthlyTotals.length).toFixed(2);
 
@@ -187,8 +201,12 @@ export async function predictFutureTransactions(txns: Transaction[]) {
 		);
 	}
 
-	// Return projection in BASE_CURRENCY
-	return { projectedMonthlyNet: avg };
+	return {
+		predictedIncome: avg > 0 ? avg : 0,
+		predictedExpenses: avg < 0 ? Math.abs(avg) : 0,
+		reliability: 'medium' as const,
+		message: 'Projection based on average monthly net cashflow.'
+	};
 }
 
 /* ------------------------------------------------------------------

@@ -1,49 +1,64 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import { get } from 'svelte/store'; // Keep get for handleGenerateReport
+
+	// --- Import Separated Stores ---
+	// import { appStore } from '$lib/stores/AppStore'; // REMOVE old monolithic store
+	import { conversationStore } from '$lib/stores/conversationStore';
+	import { transactionStore } from '$lib/stores/transactionStore';
+	import { categories } from '$lib/stores/categoryStore'; // Import readable categories store
+
+	// --- Import Selectors ---
+	import { getCategoryTotalsInBase } from '$lib/stores/selectors'; // Import async selector
+
+	// --- Import Services ---
+	import { generateHTMLReport } from '$lib/services/exporter'; // Adjust path if needed
+	import { initialize } from '$lib/services/ai/conversation/conversationService'; // Adjust path
+	import { initializeModelDiscovery } from '$lib/services/ai/model-discovery'; // Adjust path
+	import { isOllamaAvailable } from '$lib/services/ai/ollama-client'; // Adjust path
+
+	// --- Import Components ---
 	import LLMWithDataLayout from '$lib/components/input/LLMConversation/LLMWithDataLayout.svelte';
 	import FinancialAnalysis from '$lib/components/analysis/FinancialAnalysis.svelte';
-	import TransactionModal from '$lib/components/transactions/TransactionModal.svelte'; // <-- IMPORT THE MODAL
-	import { onMount } from 'svelte';
-	import { appStore } from '$lib/stores/AppStore';
-	import { get } from 'svelte/store';
-	import { generateHTMLReport } from '$lib/services/exporter';
-	import { initialize } from '$lib/services/ai/conversation/conversationService';
-	import { initializeModelDiscovery } from '$lib/services/ai/model-discovery';
-	import { isOllamaAvailable } from '$lib/services/ai/ollama-client';
-	
+	import TransactionModal from '$lib/components/transactions/TransactionModal.svelte';
 
 	onMount(async () => {
-		initialize(); // Initialize conversation service
+		// Initialize conversation service (doesn't interact with store directly here)
+		initialize();
 
-		// Try to discover available models
+		// Initialize model discovery (might update uiStore internally if refactored)
 		try {
 			await initializeModelDiscovery();
 		} catch (e) {
 			console.warn('Model discovery failed:', e);
 		}
 
-		// Check if any LLM is available
+		// Check LLM availability and update conversationStore
 		try {
 			const llmAvailable = await isOllamaAvailable();
-			appStore.setLLMAvailability(llmAvailable); // Update the store
+			// --- Use conversationStore action ---
+			conversationStore.setLLMAvailability(llmAvailable);
 			if (!llmAvailable) {
 				console.warn('No LLM available. App will have limited functionality.');
 			}
 		} catch (e) {
 			console.warn('Error checking LLM availability:', e);
-			appStore.setLLMAvailability(false);
+			// --- Use conversationStore action ---
+			conversationStore.setLLMAvailability(false);
 		}
 
-		// Trigger initial analysis if needed (Removed - FinancialAnalysis component handles this internally)
-		// if (get(appStore).transactions.length > 0) {
-		//  appStore.runFinancialAnalysis(); // This might be redundant if FinancialAnalysis runs itself
-		// }
+		// No need to trigger analysis here, FinancialAnalysis component handles it
 	});
 
-	// Handler for report generation
+	// Handler for report generation - now async
 	async function handleGenerateReport() {
-		const currentTransactions = get(appStore).transactions;
-		const currentCategories = get(appStore).categories;
-		const currentTotals = await appStore.getCategoryTotals();
+		// --- Read state from specific stores using get() ---
+		const currentTransactions = get(transactionStore);
+		const currentCategories = get(categories); // Get value from readable store
+		// --- Call async selector ---
+		const currentTotals = await getCategoryTotalsInBase(); // Await the result
+
+		// Call the report generator service
 		generateHTMLReport(currentTransactions, currentTotals, currentCategories);
 	}
 </script>
@@ -51,7 +66,7 @@
 <main class="page-container">
 	<h1>AI Transaction Entry</h1>
 
-	{#if $appStore.conversation.isProcessing}
+	{#if $conversationStore.isProcessing}
 		<div class="processing-indicator">AI Assistant is working...</div>
 	{/if}
 
@@ -62,12 +77,11 @@
 		<h2>Actions</h2>
 		<button
 			on:click={handleGenerateReport}
-			disabled={$appStore.transactions.length === 0}
-			class="action-button primary-action"
+			disabled={$transactionStore.length === 0} class="action-button primary-action"
 		>
 			Generate HTML Report
 		</button>
-	</div>
+		</div>
 </main>
 
 <TransactionModal />

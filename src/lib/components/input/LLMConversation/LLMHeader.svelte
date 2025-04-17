@@ -1,46 +1,56 @@
-<!-- src/lib/components/input/LLMConversation/LLMHeader.svelte -->
 <script lang="ts">
-	import { appStore } from '$lib/stores/AppStore';
-	import ModelSelector from './ModelSelector.svelte';
+	// --- Import specific store ---
+	// import { appStore } from '$lib/stores/AppStore'; // REMOVE old import
+	import { conversationStore } from '$lib/stores/conversationStore'; // ADD specific store import
+
+	// --- Component Imports ---
+
+	// --- Local State ---
+	let copySuccess = false; // For showing copy feedback
+
+	// --- Functions ---
 
 	// Function to handle copying conversation content
 	function copyConversation() {
-		const messages = $appStore.conversation.messages;
+		// Read messages directly from the conversationStore
+		const messages = $conversationStore.messages; // Use conversationStore
 		if (!messages || messages.length === 0) return;
 
-		// Format messages for copying
+		// Format messages for copying (logic remains the same)
 		const formattedContent = messages
 			.map((msg) => {
 				const role = msg.role === 'user' ? 'You' : 'Assistant';
-				return `${role}: ${msg.content}`;
+				// Ensure content is a string before using it
+				const contentString = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+				return `${role}: ${contentString}`;
 			})
 			.join('\n\n');
 
-		// Copy to clipboard
+		// Copy to clipboard (logic remains the same)
 		navigator.clipboard
 			.writeText(formattedContent)
 			.then(() => {
-				showCopySuccess();
+				showCopySuccess(); // Trigger local UI feedback
 			})
 			.catch((err) => {
 				console.error('Failed to copy conversation:', err);
+				// TODO: Optionally show an error message to the user
 			});
 	}
 
-	// Show temporary success message
-	let copySuccess = false;
+	// Show temporary success message (local UI logic)
 	function showCopySuccess() {
 		copySuccess = true;
 		setTimeout(() => {
 			copySuccess = false;
-		}, 2000);
+		}, 2000); // Hide after 2 seconds
 	}
 </script>
 
 <div class="conversation-header-embedded">
 	<h4>AI Transaction Assistant</h4>
 	<div class="header-controls">
-		<button
+        <button
 			class="copy-button"
 			on:click={copyConversation}
 			aria-label="Copy conversation"
@@ -67,17 +77,14 @@
 	</div>
 </div>
 
-{#if $appStore.conversation.progress > 0}
-	<div class="progress-container">
-		<div class="progress-bar" style="width: {$appStore.conversation.progress}%"></div>
-	</div>
+{#if $conversationStore.progress > 0}  <div class="progress-container">
+		<div class="progress-bar" style="width: {$conversationStore.progress}%"></div> </div>
 {/if}
 
-{#if $appStore.conversation.status && $appStore.conversation.status !== 'Thinking...'}
-	<div class="status-message">{$appStore.conversation.status}</div>
-{/if}
+{#if $conversationStore.status && $conversationStore.status !== 'Thinking…'} <div class="status-message">{$conversationStore.status}</div> {/if}
 
 <style>
+	/* Styles remain the same */
 	.conversation-header-embedded {
 		padding: 10px 15px;
 		background-color: #eaf2f8; /* Light blue background */
@@ -96,7 +103,7 @@
 	.header-controls {
 		display: flex;
 		align-items: center;
-		gap: 10px;
+		gap: 10px; /* Space between controls */
 	}
 	.copy-button {
 		display: flex;
@@ -108,7 +115,7 @@
 		color: #2c3e50;
 		cursor: pointer;
 		transition: all 0.2s ease;
-		position: relative;
+		position: relative; /* For positioning the success indicator */
 	}
 	.copy-button:hover {
 		background-color: rgba(44, 62, 80, 0.1);
@@ -117,7 +124,7 @@
 		position: absolute;
 		top: -5px;
 		right: -5px;
-		background-color: #2ecc71;
+		background-color: #2ecc71; /* Green */
 		color: white;
 		border-radius: 50%;
 		width: 16px;
@@ -129,42 +136,32 @@
 		animation: fade-in-out 2s ease;
 	}
 	@keyframes fade-in-out {
-		0% {
-			opacity: 0;
-		}
-		20% {
-			opacity: 1;
-		}
-		80% {
-			opacity: 1;
-		}
-		100% {
-			opacity: 0;
-		}
+		0% { opacity: 0; }
+		20% { opacity: 1; }
+		80% { opacity: 1; }
+		100% { opacity: 0; }
 	}
 	.progress-container {
-		height: 4px; /* Slim progress bar */
-		background-color: #e0e0e0; /* Light grey background */
+		height: 4px;
+		background-color: #e0e0e0;
 		width: 100%;
-		flex-shrink: 0; /* Prevent shrinking */
-		/* Optional: Subtle shadow or border */
-		/* border-bottom: 1px solid #ddd; */
+		flex-shrink: 0;
 	}
 	.progress-bar {
 		height: 100%;
-		background-color: #2ecc71; /* Green for progress */
-		transition: width 0.3s ease; /* Smooth transition */
-		border-radius: 0 2px 2px 0; /* Slightly rounded edge */
+		background-color: #2ecc71; /* Green */
+		transition: width 0.3s ease;
+		border-radius: 0 2px 2px 0;
 	}
 	.status-message {
-		font-size: 13px; /* Slightly smaller */
-		color: #555; /* Medium grey text */
+		font-size: 13px;
+		color: #555;
 		text-align: center;
-		padding: 5px 10px; /* Adjusted padding */
-		background-color: #f8f9fa; /* Very light grey */
-		border-bottom: 1px solid #eee; /* Lighter border */
-		flex-shrink: 0; /* Prevent shrinking */
+		padding: 5px 10px;
+		background-color: #f8f9fa;
+		border-bottom: 1px solid #eee;
+		flex-shrink: 0;
 		line-height: 1.3;
-		font-style: italic; /* Italicize status */
+		font-style: italic;
 	}
 </style>

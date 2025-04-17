@@ -1,15 +1,14 @@
-// --- FILENAME: src/lib/services/ai/conversation/handlers/handleMood.ts ---
+// src/lib/services/ai/conversation/handlers/handleMood.ts
 
-// --- REMOVE old store import ---
-// import { conversationStore } from '../conversationStore';
-// --- Import central store ---
-import { appStore } from '$lib/stores/AppStore';
+// --- Import specific stores ---
+import { conversationStore } from '$lib/stores/conversationStore';
+// import { get } from 'svelte/store'; // 'get' is not needed here
 
 /**
  * Handles non-transactional, mood-based, or simple conversational inputs.
  * Examples: "Hello", "Thanks", "How are you?", "Okay", "Sounds good".
- * Uses appStore actions to add messages directly for greetings/thanks.
- * Returns response strings for affirmations/questions to be added by the service.
+ * Adds direct responses for greetings/thanks via conversationStore.
+ * Returns response strings for affirmations/questions to be added by the service layer.
  *
  * @param message The user's input message.
  * @param explicitDirectionIntent Optional direction hint (ignored by this handler).
@@ -20,35 +19,49 @@ export async function handleMood(
 	explicitDirectionIntent: 'in' | 'out' | null // Keep signature consistent
 ): Promise<{ handled: boolean; response?: string }> {
 	const lowerMessage = message.toLowerCase().trim();
-	const simpleGreetings = ['hello', 'hi', 'hey', 'yo'];
-	const simpleThanks = ['thanks', 'thank you', 'thx', 'ty'];
-	const simpleAffirmations = ['ok', 'okay', 'sounds good', 'got it', 'cool'];
-	const simpleQuestions = ['how are you', 'what can you do'];
 
+	// Define lists of simple conversational patterns
+	const simpleGreetings = [
+		'hello',
+		'hi',
+		'hey',
+		'yo',
+		'greetings',
+		'good morning',
+		'good afternoon'
+	];
+	const simpleThanks = ['thanks', 'thank you', 'thx', 'ty', 'cheers', 'appreciated'];
+	const simpleAffirmations = ['ok', 'okay', 'sounds good', 'got it', 'cool', 'alright', 'sure'];
+	const simpleQuestions = ['how are you', 'what can you do', 'help'];
+
+	// Check for greetings
 	if (simpleGreetings.some((g) => lowerMessage.startsWith(g))) {
-		// --- Respond directly using appStore action ---
-		appStore.addConversationMessage(
+		// --- Respond directly using conversationStore action ---
+		conversationStore.addMessage(
 			'assistant',
 			'Hello there! How can I help you with your transactions today?'
 		);
-		// Indicate handled, no response string needed as message was added directly.
-		// The service's finishProcessing won't run if no response string is returned.
+		// Indicate handled; no response string needed as message was added directly.
 		return { handled: true };
 	}
 
+	// Check for thanks
 	if (simpleThanks.some((t) => lowerMessage.includes(t))) {
-		// --- Respond directly using appStore action ---
-		appStore.addConversationMessage('assistant', "You're welcome!");
-		// Indicate handled, no response string needed.
+		// --- Respond directly using conversationStore action ---
+		conversationStore.addMessage('assistant', "You're welcome!");
+		// Indicate handled; no response string needed.
 		return { handled: true };
 	}
 
+	// Check for simple affirmations (often follow an action)
 	if (simpleAffirmations.some((a) => lowerMessage === a)) {
-		// Often follows an action. Provide a minimal response string
-		// for the service layer to add via finishProcessing.
+		// Provide a minimal response string for the service layer to add.
+		// Avoids adding redundant "Okay." if the previous action already confirmed.
+		// Consider returning handled: true without a response if preferred.
 		return { handled: true, response: 'Okay.' };
 	}
 
+	// Check for simple questions about the assistant's function
 	if (simpleQuestions.some((q) => lowerMessage.includes(q))) {
 		const response =
 			"I'm an AI assistant designed to help you extract and organize transaction data from text or descriptions. Just paste your data or tell me about your spending!";

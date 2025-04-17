@@ -3,7 +3,8 @@
 // --- REMOVE old store imports ---
 
 // --- Import Central Store ---
-import { appStore } from '$lib/stores/AppStore';
+import { conversationStore } from '$lib/stores/conversationStore';
+import { transactionStore } from '$lib/stores/transactionStore';
 import { get } from 'svelte/store';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -16,7 +17,7 @@ import { BULK_DATA_THRESHOLD_LENGTH } from '../constants';
 // Bulk Processing Helpers
 import { llmChunkTransactions } from '../bulk/llmChunkTransactions';
 import { deduplicateTransactions, getCategoryBreakdown } from '../bulk/processing-helpers';
-// Removed unused categorizeTransaction import (appStore.addTransactions likely handles categorization implicitly or it happens in parser)
+// Removed unused categorizeTransaction import (appStore.transactions.add likely handles categorization implicitly or it happens in parser)
 import type { Transaction } from '$lib/types/types';
 
 // Helper Functions
@@ -47,13 +48,13 @@ export async function handleBulkData(
 
 	// --- Use appStore actions for initial state updates ---
 	// Acknowledge receipt and inform user about background processing
-	appStore.addConversationMessage(
+	conversationStore.addMessage(
 		'assistant',
 		"That looks like a lot of data! I'll process it in the background and add transactions as they are found. This might take a moment..."
 	);
 	// Ensure processing state is set (may be redundant if sendMessage did, but safe)
-	appStore.setConversationProcessing(true);
-	appStore.setConversationStatus('Starting bulk processing...', 5);
+	conversationStore.setProcessing(true);
+	conversationStore.setStatus('Starting bulk processing...', 5);
 
 	// --- Define the background task ---
 	const backgroundTask = async () => {
@@ -63,7 +64,7 @@ export async function handleBulkData(
 
 		try {
 			// --- Use appStore actions for status updates ---
-			appStore.setConversationStatus('AI identifying chunks...', 10);
+			conversationStore.setStatus('AI identifying chunks...', 10);
 
 			const llmChunks = await llmChunkTransactions(message);
 			const totalChunks = llmChunks.length;
@@ -71,7 +72,7 @@ export async function handleBulkData(
 			if (totalChunks === 0) {
 				console.warn(`[BulkTask ${batchId}] LLM chunking returned 0 chunks.`);
 				// --- Use appStore action ---
-				appStore.addConversationMessage(
+				conversationStore.addMessage(
 					'assistant',
 					'The AI could not identify distinct transaction blocks in your text. Please check the format or try again.'
 				);
@@ -83,7 +84,7 @@ export async function handleBulkData(
 				`[BulkTask ${batchId}] LLM identified ${totalChunks} potential transaction chunks.`
 			);
 			// --- Use appStore action ---
-			appStore.setConversationStatus(`Processing ${totalChunks} identified chunks (0%)...`, 20);
+			conversationStore.setStatus(`Processing ${totalChunks} identified chunks (0%)...`, 20);
 
 			// --- Process each chunk ---
 			const PARALLEL_BATCH_SIZE = 5;
@@ -95,7 +96,7 @@ export async function handleBulkData(
 
 				const progressSoFar = 20 + Math.round((batchStart / totalChunks) * 70);
 				// --- Use appStore action ---
-				appStore.setConversationStatus(
+				conversationStore.setStatus(
 					`Processing batch ${batchIndex + 1}/${batchCount} (${progressSoFar}%)...`,
 					progressSoFar
 				);
@@ -145,7 +146,7 @@ export async function handleBulkData(
 							);
 
 							// *** Add directly to appStore using its action ***
-							appStore.addTransactions(finalChunkTransactions);
+							transactionStore.add(finalChunkTransactions);
 
 							// Keep track locally for final summary
 							allExtractedFromThisRun.push(...finalChunkTransactions);
@@ -164,7 +165,7 @@ export async function handleBulkData(
 				// --- Use appStore action for status update ---
 				const completedChunks = batchEnd;
 				const overallProgress = 20 + Math.round((completedChunks / totalChunks) * 70);
-				appStore.setConversationStatus(
+				conversationStore.setStatus(
 					`Processed ${completedChunks}/${totalChunks} chunks (${overallProgress}%)...`,
 					overallProgress
 				);
@@ -176,7 +177,7 @@ export async function handleBulkData(
 			} // End for loop (batches)
 
 			// --- Use appStore action for status update ---
-			appStore.setConversationStatus('Finalizing results...', 95);
+			conversationStore.setStatus('Finalizing results...', 95);
 
 			// Deduplicate and summarize (logic remains the same)
 			const uniqueTransactionsFromThisRun = deduplicateTransactions(allExtractedFromThisRun);
@@ -202,16 +203,16 @@ export async function handleBulkData(
 				if (!explicitDirectionIntent && hasUnknown && !hasIn && !hasOut) {
 					console.log(`[BulkTask ${batchId}] Requesting direction clarification for bulk results.`);
 					// --- Use appStore action ---
-					appStore.setConversationClarificationNeeded(
+					conversationStore.setConversationClarificationNeeded(
 						true,
 						uniqueTransactionsFromThisRun.map((t) => t.id).filter((id): id is string => !!id) // Ensure IDs are strings
 					);
 					finalMessage += `\n\nHowever, I'm unsure if they are mostly income ('in') or expenses ('out'). Could you clarify?`;
 					// --- Use appStore action ---
-					appStore.setConversationStatus('Awaiting clarification', 98);
+					conversationStore.setStatus('Awaiting clarification', 98);
 				} else {
 					// --- Use appStore action ---
-					appStore.setConversationStatus('Bulk processing complete', 100);
+					conversationStore.setStatus('Bulk processing complete', 100);
 				}
 			} else {
 				finalMessage = `I finished processing the data but couldn't extract any valid new transactions.`;
@@ -220,34 +221,34 @@ export async function handleBulkData(
 				}
 				finalMessage += ' Please check the format or try providing the data again.';
 				// --- Use appStore action ---
-				appStore.setConversationStatus('No new transactions found', 100);
+				conversationStore.setStatus('No new transactions found', 100);
 			}
 
 			// --- Use appStore action ---
-			appStore.addConversationMessage('assistant', finalMessage);
+			conversationStore.addMessage('assistant', finalMessage);
 		} catch (error) {
 			// Catch critical errors
 			console.error(`[BulkTask ${batchId}] Critical error during bulk processing:`, error);
 			const errorMsg = getLLMFallbackResponse(error instanceof Error ? error : undefined);
 			// --- Use appStore actions ---
-			appStore.addConversationMessage(
+			conversationStore.addMessage(
 				'assistant',
 				`Sorry, a critical error occurred during bulk processing: ${errorMsg}`
 			);
-			appStore.setConversationStatus('Error processing bulk data', 100); // Use status string directly
+			conversationStore.setStatus('Error processing bulk data', 100); // Use status string directly
 		} finally {
 			console.log(`[BulkTask ${batchId}] Background task finished.`);
 			// --- Use appStore actions and reads for final state reset ---
-			appStore.setConversationProcessing(false); // This action should also reset progress if needed
+			conversationStore.setProcessing(false); // This action should also reset progress if needed
 
 			// Reset status unless waiting for clarification or error occurred
-			const currentState = get(appStore).conversation; // Read from appStore
+			const currentState = get(conversationStore); // Read from appStore
 			if (
 				!currentState._internal.waitingForDirectionClarification &&
 				currentState.status !== 'Error processing bulk data' &&
 				currentState.status !== 'Error'
 			) {
-				appStore.setConversationStatus('', 0);
+				conversationStore.setStatus('', 0);
 			}
 		}
 	}; // End backgroundTask definition

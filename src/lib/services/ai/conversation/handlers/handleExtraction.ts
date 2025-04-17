@@ -1,27 +1,44 @@
+// src/lib/services/ai/conversation/handlers/handleExtraction.ts
 import { get } from 'svelte/store';
 import { v4 as uuidv4 } from 'uuid';
-import { appStore } from '$lib/stores/AppStore';
-import type { Transaction } from '$lib/types/types';
+
+// --- Import specific stores ---
+import { conversationStore } from '$lib/stores/conversationStore';
+import { transactionStore } from '$lib/stores/transactionStore';
+
+// --- Import Types ---
+import type { Transaction } from '$lib/types/types'; // Adjust path if needed
+
+// --- Import Helpers / Services ---
 import {
 	applyExplicitDirection,
 	textLooksLikeTransaction,
-	parseJsonFromAiResponse
-} from '$lib/utils/helpers';
-import { getExtractionPrompt, getSplitItemDescriptionPrompt, getSystemPrompt } from '../../prompts';
-import { parseTransactionsFromLLMResponse } from '../../extraction/llm-parser';
-import { getLLMFallbackResponse, llmChat } from '../../llm-helpers';
-import { resolveAndFormatDate } from '$lib/utils/date';
-import { categorizeTransaction } from '$lib/services/categorizer';
+	// parseJsonFromAiResponse, // Not used directly here, parser handles it
+	formatCurrency
+} from '$lib/utils/helpers'; // Adjust path if needed
+import { getExtractionPrompt, getSystemPrompt, getSplitItemDescriptionPrompt } from '../../prompts'; // Adjust path if needed
+import { parseTransactionsFromLLMResponse } from '../../extraction/llm-parser'; // Adjust path if needed
+import { getLLMFallbackResponse, llmChat } from '../../llm-helpers'; // Adjust path if needed
+import { resolveAndFormatDate } from '$lib/utils/date'; // Adjust path if needed
+// Removed categorizeTransaction import as it's handled elsewhere or not needed here
 
+// --- Helper Functions ---
+
+// Normalizes description for consistent key generation
 function normalizeDescription(desc: string | undefined | null): string {
 	if (!desc) return 'unknown';
 	return desc.toLowerCase().replace(/\s+/g, ' ').trim();
 }
+
+// Creates a unique key for a transaction to help with deduplication
+// ** UPDATED to include currency **
 function createTransactionKey(txn: Transaction): string {
 	const amountStr = typeof txn.amount === 'number' ? txn.amount.toFixed(2) : '0.00';
-	return `${txn.date || 'unknown'}-${amountStr}-${normalizeDescription(txn.description)}-${txn.direction || 'unknown'}`;
+	// Include currency in the key for multi-currency uniqueness
+	return `${txn.date || 'unknown'}-${amountStr}-${txn.currency?.toUpperCase() || 'USD'}-${normalizeDescription(
+		txn.description
+	)}-${txn.direction || 'unknown'}`;
 }
-
 
 /**
  * Handles extracting transactions from user messages.
@@ -34,50 +51,40 @@ export async function handleExtraction(
 	explicitDirectionIntent: 'in' | 'out' | null
 ): Promise<{ handled: boolean; response?: string; extractedCount?: number }> {
 	// --- Step 1: Check for Split Bill Scenario ---
-
-	// Regex to detect "split" or "splitting" followed by currency/amount
-	// Captures: 1=Amount string, 2=Optional 'k'/'K' suffix
 	const splitRegex =
 		/\bsplit(?:ting)?\b(?:.*?)(?:[\$£€¥]|\b(?:USD|EUR|GBP|JPY|CAD|AUD|CHF|CNY|INR)\b)?\s?((?:\d{1,3}(?:,\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?))\s?([kK])?/i;
 	const splitMatch = message.match(splitRegex);
-	const today = new Date().toISOString().split('T')[0]; // Today's date for context
+	const today = new Date().toISOString().split('T')[0];
 
 	if (splitMatch && splitMatch.index !== undefined) {
-		// Attempt to parse the total amount mentioned in the split
-		let amountStr = splitMatch[1].replace(/,/g, ''); // Remove commas from amount string
-		const kSuffix = splitMatch[2]; // Check for 'k' suffix
+		let amountStr = splitMatch[1].replace(/,/g, '');
+		const kSuffix = splitMatch[2];
 		if (kSuffix) {
-			// Convert 'k' suffix to thousands
 			const num = parseFloat(amountStr);
 			amountStr = isNaN(num) ? amountStr : (num * 1000).toString();
 		}
 		const total = parseFloat(amountStr);
 
-		// If a valid total amount was parsed...
 		if (!isNaN(total)) {
-			// --- Use LLM to get a better description for the split item ---
-			let contextDescription = 'Shared Item'; // Default fallback description
+			// --- Use LLM to get description context ---
+			let contextDescription = 'Shared Item'; // Default
 			try {
 				console.log('[handleExtraction] Split detected, asking LLM for item description...');
 				const descPrompt = getSplitItemDescriptionPrompt(message);
-				// Use a potentially faster/simpler model for this focused task
 				const llmDescResponse = await llmChat([{ role: 'user', content: descPrompt }], {
 					temperature: 0.1,
-					forceSimple: true // Request simpler model if configured
+					forceSimple: true
 				});
-
-				// Use LLM response if valid and not the generic fallback
 				if (
 					llmDescResponse &&
 					llmDescResponse.trim() &&
 					llmDescResponse.trim().toLowerCase() !== 'shared item'
 				) {
-					// Basic Title Case formatting
 					contextDescription = llmDescResponse
 						.trim()
 						.toLowerCase()
 						.split(' ')
-						.map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+						.map((w) => w.charAt(0).toUpperCase() + w.slice(1))
 						.join(' ');
 					console.log(
 						`[handleExtraction] LLM suggested split description: "${contextDescription}"`
@@ -89,60 +96,53 @@ export async function handleExtraction(
 				}
 			} catch (err) {
 				console.error('[handleExtraction] Error getting split description from LLM:', err);
-				contextDescription = 'Shared Item'; // Fallback on error
+				contextDescription = 'Shared Item'; // Fallback
 			}
-			// --- End LLM Description Context ---
 
-			// Detect currency from the original match or default to USD
 			const currencyMatch = splitMatch[0].match(
 				/[\$£€¥]|\b(?:USD|EUR|GBP|JPY|CAD|AUD|CHF|CNY|INR)\b/i
 			);
 			const detectedCurrency = currencyMatch ? currencyMatch[0].toUpperCase() : 'USD';
+			const contextDate = resolveAndFormatDate(message); // Resolve date
 
-			// Resolve date from original message (defaults to today if needed)
-			const contextDate = resolveAndFormatDate(message);
-
-			// Store the context and set the state to wait for the user's share amount
-			appStore.setWaitingForSplitBillShare({
+			// --- Set state using conversationStore actions ---
+			conversationStore.setWaitingForSplitBillShare({
 				totalAmount: total,
 				currency: detectedCurrency,
 				originalMessage: message,
 				possibleDate: contextDate,
-				description: contextDescription // Store the determined description
+				description: contextDescription
 			});
-
-			// Ask the user for their share, providing context
-			appStore.addConversationMessage(
+			conversationStore.addMessage(
 				'assistant',
 				`You mentioned splitting "${contextDescription}" (total approx. ${total} ${detectedCurrency}). How much was *your* specific share (just the number)?`
 			);
-			appStore.setConversationStatus('Awaiting split-bill share', 100); // Update status
+			conversationStore.setStatus('Awaiting split-bill share', 100);
 
-			// Return handled: true to stop further processing by other handlers
-			return { handled: true, response: '' };
+			return { handled: true, response: '' }; // Stop processing here
 		} else {
-			// Log if split was detected but amount parsing failed (should be rare)
 			console.warn(
 				'[ExtractionHandler] Split detected, but could not parse total amount from:',
 				splitMatch[0]
 			);
-			// Allow falling through to general extraction in this unlikely case
 		}
 	}
 	// --- End Split Bill Handling ---
 
 	// --- Step 2: General Transaction Extraction (If not handled as split) ---
-
-	// Basic check if the message looks like it might contain transaction info
 	if (!textLooksLikeTransaction(message)) {
-		return { handled: false }; // Let other handlers (like handleNormalResponse) take over
+		return { handled: false };
 	}
 
-	// Prevent re-processing identical messages consecutively
-	const lastProcessedMessage = get(appStore).conversation._internal.lastUserMessageText;
+	// --- Read state using get() on specific stores ---
+	const internalState = get(conversationStore)._internal;
+	const lastProcessedMessage = internalState.lastUserMessageText;
+
+	// Prevent re-processing identical messages
 	if (lastProcessedMessage && lastProcessedMessage === message) {
-		console.warn('[ExtractionHandler] Input message identical to last. Preventing re-addition.');
-		appStore.addConversationMessage(
+		console.warn('[ExtractionHandler] Input message identical to last.');
+		// Use conversationStore action
+		conversationStore.addMessage(
 			'assistant',
 			"It looks like I've already processed that exact text."
 		);
@@ -150,13 +150,14 @@ export async function handleExtraction(
 	}
 
 	console.log('[ExtractionHandler] Handling general transaction data extraction.');
-	appStore.setConversationStatus('Extracting transactions...', 30);
+	// --- Use conversationStore action ---
+	conversationStore.setStatus('Extracting transactions...', 30);
 
-	const batchId = uuidv4(); // Unique ID for this extraction batch
+	const batchId = uuidv4();
 	console.log(`[ExtractionHandler] Generated batchId: ${batchId}`);
 
 	try {
-		// Prepare prompt and call LLM for extraction
+		// Prepare prompt and call LLM
 		const extractionPrompt = getExtractionPrompt(message, today);
 		const messages = [
 			{ role: 'system' as const, content: getSystemPrompt(today) },
@@ -164,10 +165,10 @@ export async function handleExtraction(
 		];
 		let aiResponse = await llmChat(messages, { temperature: 0.2, rawUserText: message });
 
-		// Parse the LLM's JSON response (parser now uses resolveAndFormatDate)
+		// Parse response (parser uses resolveAndFormatDate)
 		let parsedTransactions = parseTransactionsFromLLMResponse(aiResponse, batchId);
 
-		// Optional: Log if LLM found fewer transactions than expected based on 'and' clauses
+		// Log if fewer transactions found than expected (optional)
 		const estimateClauses = message
 			.split(/\band\b/i)
 			.map((s) => s.trim())
@@ -178,38 +179,35 @@ export async function handleExtraction(
 			parsedTransactions.length < estimateClauses
 		) {
 			console.log(
-				`[Extraction] Found ${parsedTransactions.length} valid transactions out of approximately ${estimateClauses} mentioned.`
+				`[Extraction] Found ${parsedTransactions.length} of ~${estimateClauses} expected transactions.`
 			);
 		} else if (Array.isArray(parsedTransactions) && parsedTransactions.length === 0) {
 			console.warn(`[Extraction] No transactions parsed by LLM from: "${message}"`);
-			// Consider if a retry is needed here, or just report failure
 		}
 
-		// Handle potential parsing failures or empty results
+		// Handle parsing failure
 		if (!Array.isArray(parsedTransactions)) {
 			console.warn('[ExtractionHandler] Failed to parse valid transaction array from AI response.');
 			const fallback = getLLMFallbackResponse(new Error('AI response parsing failed'));
-			appStore.setConversationStatus('Error parsing response');
-			appStore.clearCorrectionContext();
+			conversationStore.setStatus('Error parsing response');
+			conversationStore.clearCorrectionContext(); // Use specific action
 			return { handled: true, response: fallback };
 		}
 
-		// --- Check for Clarification Needs (e.g., "$X in ETH") ---
+		// --- Check for Asset Clarification Needs ---
 		const transactionsToAdd: Transaction[] = [];
 		let needsAssetClarification = false;
-		let clarificationMessage = ''; // Store the first clarification question found
+		let clarificationMessage = '';
 
 		for (const txn of parsedTransactions) {
-			// Check if the parser/LLM added the needs_clarification flag
 			if (txn.needs_clarification) {
+				// Check flag from parser/LLM
 				needsAssetClarification = true;
-				if (!clarificationMessage) clarificationMessage = txn.needs_clarification; // Store the first question
+				if (!clarificationMessage) clarificationMessage = txn.needs_clarification;
 				console.log(
 					`[ExtractionHandler] Transaction needs clarification: ${txn.needs_clarification}`
 				);
-				// Don't add this transaction to transactionsToAdd yet
 			} else {
-				// Add transactions that *don't* need clarification
 				transactionsToAdd.push(txn);
 			}
 		}
@@ -218,77 +216,76 @@ export async function handleExtraction(
 		let addedCount = 0;
 		let response = '';
 
-		// Add the transactions that *don't* need clarification first
 		if (transactionsToAdd.length > 0) {
 			let finalNonAmbiguous = applyExplicitDirection(transactionsToAdd, explicitDirectionIntent);
 			// Deduplicate before adding
-			const currentMainTransactions = get(appStore).transactions;
-			const existingKeys = new Set(currentMainTransactions.map(createTransactionKey));
+			// --- Read transactions from transactionStore ---
+			const currentMainTransactions = get(transactionStore);
+			const existingKeys = new Set(currentMainTransactions.map(createTransactionKey)); // Uses updated key function
 			const trulyNewNonAmbiguous = finalNonAmbiguous.filter(
 				(newTxn) => !existingKeys.has(createTransactionKey(newTxn))
 			);
 
 			if (trulyNewNonAmbiguous.length > 0) {
-				appStore.addTransactions(trulyNewNonAmbiguous);
+				// --- Use transactionStore action ---
+				transactionStore.add(trulyNewNonAmbiguous);
 				addedCount = trulyNewNonAmbiguous.length;
 				response = `Added ${addedCount} transaction(s). `;
 			}
 		}
 
-		// If *any* transaction needed clarification, ask the question and stop
+		// If clarification needed, ask and stop
 		if (needsAssetClarification && clarificationMessage) {
-			appStore.addConversationMessage('assistant', clarificationMessage);
-			appStore.setConversationStatus('Awaiting clarification', 100);
-			// Store context that this message needs follow-up
-			appStore._setConversationInternalState({
+			conversationStore.addMessage('assistant', clarificationMessage);
+			conversationStore.setStatus('Awaiting clarification', 100);
+			// --- Use conversationStore action ---
+			conversationStore._setInternalState({
 				lastUserMessageText: message,
 				lastExtractionBatchId: batchId
 			});
-			// Respond, potentially mentioning transactions that *were* added
 			return {
 				handled: true,
 				response: addedCount > 0 ? response + 'Waiting for clarification on another item.' : ''
 			};
 		}
 
-		// --- Handle cases where nothing was added (all duplicates, empty, or only clarification needed) ---
+		// --- Handle cases where nothing new was added ---
 		if (addedCount === 0) {
 			if (parsedTransactions.length > 0) {
-				// Parsed something, but all were duplicates or needed clarification
+				// Parsed but all duplicates/clarification needed
 				console.warn(
 					`[ExtractionHandler] All extracted transaction(s) were duplicates or needed clarification.`
 				);
-				appStore.setConversationStatus('Duplicates detected / Clarification needed', 100);
-				appStore.clearCorrectionContext(); // Clear correction context if it was a duplicate
+				conversationStore.setStatus('Duplicates detected / Clarification needed', 100);
+				conversationStore.clearCorrectionContext();
 				response = "It looks like I've already recorded those transactions or need more details.";
 			} else {
-				// LLM returned empty array
-				console.log('[ExtractionHandler] LLM returned empty array, no transactions found.');
-				appStore.setConversationStatus('No new transactions found', 100);
+				// LLM returned empty
+				console.log('[ExtractionHandler] LLM returned empty array.');
+				conversationStore.setStatus('No new transactions found', 100);
 				response = "I looked through that text but couldn't find any clear transactions to add.";
 			}
-			// Store context even if nothing added, to prevent immediate re-processing
-			appStore._setConversationInternalState({
+			conversationStore._setInternalState({
 				lastUserMessageText: message,
 				lastExtractionBatchId: batchId
 			});
 			return { handled: true, response: response };
 		}
 
-		// --- If transactions were added and no clarification needed ---
-		appStore._setConversationInternalState({
+		// --- Success: Transactions added, no clarification needed ---
+		conversationStore._setInternalState({
 			lastUserMessageText: message,
 			lastExtractionBatchId: batchId
 		});
 		response += `You can see them in the list now.`;
-		appStore.setConversationStatus('Extraction complete', 100);
+		conversationStore.setStatus('Extraction complete', 100);
 		return { handled: true, response: response, extractedCount: addedCount };
 	} catch (error) {
-		// General error handling for the extraction process
+		// General error handling
 		console.error('[ExtractionHandler] Error during extraction:', error);
 		const errorMsg = getLLMFallbackResponse(error instanceof Error ? error : undefined);
-		appStore.setConversationStatus('Error during extraction');
-		appStore.clearCorrectionContext(); // Clear context on error
+		conversationStore.setStatus('Error during extraction');
+		conversationStore.clearCorrectionContext();
 		return { handled: true, response: errorMsg };
 	}
 }

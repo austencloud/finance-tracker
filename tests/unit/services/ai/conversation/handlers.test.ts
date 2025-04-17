@@ -71,7 +71,7 @@ vi.mock('$lib/stores/AppStore', () => {
 		return () => {};
 	});
 
-	const addTransactions = vi.fn((newTransactions: Transaction[]) => {
+	const transactions.add = vi.fn((newTransactions: Transaction[]) => {
 		const currentIds = new Set(mockState.transactions.map((t) => t.id));
 		const uniqueNew = newTransactions.filter((t) => t.id && !currentIds.has(t.id));
 		mockState.transactions.push(...uniqueNew);
@@ -89,7 +89,7 @@ vi.mock('$lib/stores/AppStore', () => {
 			id: ''
 		});
 	});
-	const _setConversationInternalState = vi.fn(
+	const conversation._setInternalState = vi.fn(
 		(updates: Partial<AppState['conversation']['_internal']>) => {
 			mockState.conversation._internal = { ...mockState.conversation._internal, ...updates };
 		}
@@ -100,10 +100,10 @@ vi.mock('$lib/stores/AppStore', () => {
 		subscribe,
 		update,
 		set,
-		addTransactions,
+		transactions.add,
 		setConversationStatus,
 		addConversationMessage,
-		_setConversationInternalState,
+		conversation._setInternalState,
 		runFinancialAnalysis
 	};
 
@@ -223,22 +223,25 @@ describe('Conversation Handlers', () => {
 				expect.any(String)
 			);
 
-			expect(mockedAppStore.addTransactions).toHaveBeenCalledOnce();
-			expect(mockedAppStore.addTransactions).toHaveBeenCalledWith(specificMockParsedTransactions);
+			expect(mockedAppStore.transactions.add).toHaveBeenCalledOnce();
+			expect(mockedAppStore.transactions.add).toHaveBeenCalledWith(specificMockParsedTransactions);
 
-			expect(mockedAppStore._setConversationInternalState).toHaveBeenCalledOnce();
-			expect(mockedAppStore._setConversationInternalState).toHaveBeenCalledWith(
+			expect(mockedAppStore.conversation._setInternalState).toHaveBeenCalledOnce();
+			expect(mockedAppStore.conversation._setInternalState).toHaveBeenCalledWith(
 				expect.objectContaining({
 					lastUserMessageText: inputText,
 					lastExtractionBatchId: specificMockParsedTransactions[0].batchId
 				})
 			);
 
-			expect(mockedAppStore.setConversationStatus).toHaveBeenCalledWith(
+			expect(mockedappStore.conversation.setStatus).toHaveBeenCalledWith(
 				'Extracting transactions...',
 				30
 			);
-			expect(mockedAppStore.setConversationStatus).toHaveBeenCalledWith('Extraction complete', 100);
+			expect(mockedappStore.conversation.setStatus).toHaveBeenCalledWith(
+				'Extraction complete',
+				100
+			);
 			expect(result.response).toContain('Added 1 new transaction(s).');
 		});
 
@@ -273,16 +276,19 @@ describe('Conversation Handlers', () => {
 
 			expect(result.handled).toBe(true);
 			expect(parseTransactionsFromLLMResponse).toHaveBeenCalledOnce();
-			expect(mockedAppStore.addTransactions).not.toHaveBeenCalled();
+			expect(mockedAppStore.transactions.add).not.toHaveBeenCalled();
 
-			expect(mockedAppStore._setConversationInternalState).toHaveBeenCalledOnce();
-			expect(mockedAppStore._setConversationInternalState).toHaveBeenCalledWith(
+			expect(mockedAppStore.conversation._setInternalState).toHaveBeenCalledOnce();
+			expect(mockedAppStore.conversation._setInternalState).toHaveBeenCalledWith(
 				expect.objectContaining({
 					lastUserMessageText: inputText,
 					lastExtractionBatchId: existingTxnData.batchId
 				})
 			);
-			expect(mockedAppStore.setConversationStatus).toHaveBeenCalledWith('Duplicates detected', 100);
+			expect(mockedappStore.conversation.setStatus).toHaveBeenCalledWith(
+				'Duplicates detected',
+				100
+			);
 			expect(result.response).toContain('already recorded');
 		});
 
@@ -338,11 +344,11 @@ describe('Conversation Handlers', () => {
 			}));
 			vi.clearAllMocks();
 
-			// Temporarily override addTransactions mock for *this test* to simulate content check
+			// Temporarily override transactions.add mock for *this test* to simulate content check
 			let currentMockState: AppState;
 			mockedAppStore.subscribe((state: AppState) => (currentMockState = state)); // Capture the mock state
 
-			vi.mocked(mockedAppStore.addTransactions).mockImplementationOnce(
+			vi.mocked(mockedAppStore.transactions.add).mockImplementationOnce(
 				(newTransactions: Transaction[]) => {
 					const existingContentKey = `${currentMockState.transactions[0].date}-${currentMockState.transactions[0].amount.toFixed(2)}-${currentMockState.transactions[0].description.toLowerCase()}-${currentMockState.transactions[0].direction}`;
 					const trulyNew = newTransactions.filter((t) => {
@@ -362,13 +368,13 @@ describe('Conversation Handlers', () => {
 			// Assert after improving mock for this specific test
 			expect(result.handled).toBe(true);
 			expect(parseTransactionsFromLLMResponse).toHaveBeenCalledOnce();
-			expect(mockedAppStore.addTransactions).toHaveBeenCalledOnce(); // Check the mock implementation was called
-			const addedArg = vi.mocked(mockedAppStore.addTransactions).mock.calls[0][0]; // Check what was passed to the mock
+			expect(mockedAppStore.transactions.add).toHaveBeenCalledOnce(); // Check the mock implementation was called
+			const addedArg = vi.mocked(mockedAppStore.transactions.add).mock.calls[0][0]; // Check what was passed to the mock
 			expect(addedArg).toHaveLength(1); // Assert only Gas txn was added by the *mock's logic*
 			expect(addedArg[0].description).toBe('Gas Station');
 
-			expect(mockedAppStore._setConversationInternalState).toHaveBeenCalledOnce();
-			expect(mockedAppStore._setConversationInternalState).toHaveBeenCalledWith(
+			expect(mockedAppStore.conversation._setInternalState).toHaveBeenCalledOnce();
+			expect(mockedAppStore.conversation._setInternalState).toHaveBeenCalledWith(
 				expect.objectContaining({
 					lastUserMessageText: inputText,
 					lastExtractionBatchId: 'batch-mixed'

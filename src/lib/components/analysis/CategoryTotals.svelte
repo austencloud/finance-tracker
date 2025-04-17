@@ -1,18 +1,14 @@
 <script lang="ts">
-	import { appStore } from '$lib/stores/AppStore';
+	import { transactionStore } from '$lib/stores/transactionStore';
+	import { getCategoryTotalsInBase } from '$lib/stores/selectors';
 	import type { CategoryTotals } from '$lib/types/types';
-	import { formatCurrency } from '$lib/utils/helpers'; // Import formatter
-	import { BASE_CURRENCY } from '$lib/config/constants'; // Import base currency
+	import { formatCurrency } from '$lib/utils/helpers';
+	import { BASE_CURRENCY } from '$lib/config/constants';
 
-	// Remove reactive statement: let totals: CategoryTotals = {};
-	// Remove reactive statement: $: totals = appStore.getCategoryTotals();
+	let totalsPromise: Promise<CategoryTotals> = getCategoryTotalsInBase();
 
-	// Call the async function directly for the await block
-	let totalsPromise = appStore.getCategoryTotals(); // This is now a Promise
-
-	// Re-run when transactions change
-	$: if ($appStore.transactions) {
-		totalsPromise = appStore.getCategoryTotals();
+	$: if ($transactionStore) {
+		totalsPromise = getCategoryTotalsInBase();
 	}
 </script>
 
@@ -64,85 +60,75 @@
 {:catch error}
 	<div class="category-totals error">
 		<h3>Category Totals</h3>
-		<p>Error calculating totals: {error.message}</p>
+		<p>Error calculating totals: {error instanceof Error ? error.message : 'Unknown error'}</p>
 	</div>
 {/await}
 
 <style>
-	/* Styling for the category totals container */
 	.category-totals {
 		margin: 20px 0;
-		background-color: #f8f9fa; /* Light background */
+		background-color: #f8f9fa;
 		padding: 15px;
-		border-radius: 5px; /* Rounded corners */
-		border: 1px solid #e9ecef; /* Subtle border */
-		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05); /* Subtle shadow */
+		border-radius: 5px;
+		border: 1px solid #e9ecef;
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 	}
 	.category-totals p {
 		padding: 10px;
+		text-align: center;
+		color: #6c757d;
 	}
 	.category-totals.error {
 		border-left: 4px solid #e74c3c;
 		background-color: #fdedec;
 	}
-	/* Styling for the heading */
+	.category-totals.error p {
+		color: #721c24;
+		font-weight: bold;
+	}
 	h3 {
 		margin-top: 0;
-		margin-bottom: 15px; /* Increased bottom margin */
-		color: #34495e; /* Darker heading color */
-		border-bottom: 1px solid #eee; /* Separator line */
+		margin-bottom: 15px;
+		color: #34495e;
+		border-bottom: 1px solid #eee;
 		padding-bottom: 8px;
+		font-size: 1.1em;
 	}
-
-	/* Basic table styling */
 	table {
 		width: 100%;
 		border-collapse: collapse;
-		margin-top: 15px;
+		margin-top: 10px;
 	}
-
-	/* Table header and cell styling */
 	th,
 	td {
-		padding: 12px 10px; /* Increased padding */
+		padding: 10px 8px;
 		text-align: left;
-		border-bottom: 1px solid #e0e0e0; /* Lighter border */
+		border-bottom: 1px solid #e0e0e0;
+		font-size: 0.95em;
 	}
-
-	/* Table header specific styling */
 	th {
 		background-color: #f8f9fa;
-		font-weight: 600; /* Slightly bolder */
+		font-weight: 600;
 		font-size: 0.9em;
 		color: #555;
 	}
-
-	/* Right-align amount columns */
 	.amount {
 		text-align: right;
-		font-family: 'Courier New', Courier, monospace; /* Monospace font for numbers */
+		font-family: 'Courier New', Courier, monospace;
 	}
-
-	/* Styling for expense amounts (red color) */
 	.expense-amount {
-		color: #c0392b; /* Slightly darker red */
+		color: #c0392b;
 		font-weight: 500;
 	}
-
-	/* Styling for income amounts (green color) */
 	.income-amount {
-		color: #27ae60; /* Standard green */
+		color: #27ae60;
 		font-weight: 500;
 	}
-
-	/* Styling for the grand total row */
 	.grand-total {
 		font-weight: bold;
-		background-color: #eaf2f8; /* Light blue background */
-		border-top: 2px solid #bdc3c7; /* Stronger top border */
+		background-color: #eaf2f8;
+		border-top: 2px solid #bdc3c7;
 	}
-
-	/* Ensure the grand total amount cell also gets the background */
 	.grand-total td {
 		background-color: #eaf2f8;
 	}

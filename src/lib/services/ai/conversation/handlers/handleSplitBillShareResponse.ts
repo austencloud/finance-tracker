@@ -1,86 +1,105 @@
 // src/lib/services/ai/conversation/handlers/handleSplitBillShareResponse.ts
 import { get } from 'svelte/store';
 import { v4 as uuidv4 } from 'uuid';
-import { appStore } from '$lib/stores/AppStore';
-import type { Transaction } from '$lib/types/types';
-import { categorizeTransaction } from '$lib/services/categorizer'; // For assigning category
-import { resolveAndFormatDate } from '$lib/utils/date'; // To use today's date if context date was unknown
 
+// --- Import specific stores ---
+import { conversationStore } from '$lib/stores/conversationStore';
+import { transactionStore } from '$lib/stores/transactionStore';
+
+// --- Import Types ---
+import type { Transaction } from '$lib/types/types'; // Adjust path if needed
+
+// --- Import Helpers / Services ---
+import { categorizeTransaction } from '$lib/services/categorizer'; // For assigning category
+// import { resolveAndFormatDate } from '$lib/utils/date'; // Not needed here, date comes from context
+import { formatCurrency, applyExplicitDirection } from '$lib/utils/helpers'; // Import helpers
+
+/**
+ * Handles the user's response after being asked for their share of a split bill.
+ * It expects a numeric value representing the user's portion.
+ * Reads context from conversationStore, adds transaction via transactionStore.
+ *
+ * @param message The user's input message (expected to contain the share amount).
+ * @param explicitDirectionIntent Optional direction hint (usually null here).
+ * @returns An object indicating if the message was handled and an optional response.
+ */
 export async function handleSplitBillShareResponse(
 	message: string,
-	explicitDirectionIntent: 'in' | 'out' | null // Keep signature consistent
+	explicitDirectionIntent: 'in' | 'out' | null
 ): Promise<{ handled: boolean; response?: string }> {
-	const state = get(appStore).conversation._internal;
+	// --- Read internal state directly from conversationStore ---
+	const state = get(conversationStore)._internal; // Corrected access
 
-	// Only run if we are waiting for this specific input
+	// --- Guard Clause: Only run if we are waiting for this specific input ---
 	if (!state.waitingForSplitBillShare || !state.splitBillContext) {
-		return { handled: false };
+		return { handled: false }; // Let other handlers try
 	}
 
-	// Try to extract the number share from the user's response
-	// Look for the first number (integer or decimal) in the message
+	// --- Attempt to Parse Share Amount ---
+	// Look for the first number (integer or decimal) in the message. Handles "$10", "10.50", "£10", etc.
 	const shareMatch = message.match(/([\d]+(?:[.,]\d+)?)/);
-	const shareAmountStr = shareMatch ? shareMatch[1].replace(',', '.') : null; // Handle comma decimal sep
+	// Replace comma decimal separator with period if necessary, then parse
+	const shareAmountStr = shareMatch ? shareMatch[1].replace(',', '.') : null;
 	const shareAmount = shareAmountStr ? parseFloat(shareAmountStr) : NaN;
 
+	// --- Process Valid Share Amount ---
 	if (!isNaN(shareAmount) && shareAmount > 0) {
-		// User provided a valid share amount
-		const context = state.splitBillContext;
+		const context = state.splitBillContext; // Retrieve the stored context
 
-		// Construct the transaction
+		// Construct the new transaction using the user's share and stored context
 		const newTransaction: Transaction = {
 			id: uuidv4(),
-			batchId: `split-${uuidv4().substring(0, 8)}`, // Unique batch ID for this split
-			date: context.possibleDate, // Use date resolved earlier, which defaults to today if needed
-			description: `Share of ${context.description || 'Split Bill'}`, // Use context description
-			type: 'Split', // Assign a specific type
-			amount: shareAmount, // The user's share
-			currency: context.currency, // The original currency
-			// Assign category - maybe default to 'Expenses' or use context description?
-			category: categorizeTransaction(`Share of ${context.description || 'Split Bill'}`, 'Split'),
-			notes: `User share of a split bill. Original total approx ${context.totalAmount} <span class="math-inline">\{context\.currency\}\. Original context\: "</span>{context.originalMessage}"`,
-			direction: 'out' // Usually splits are expenses, override if needed based on context/intent
+			batchId: `split-share-${uuidv4().substring(0, 8)}`, // Unique batch ID
+			date: context.possibleDate, // Use date resolved/defaulted when context was stored
+			// Use the description derived by the LLM (or default) from context
+			description: `Share of ${context.description || 'Shared Item'}`,
+			type: 'Split', // Assign a specific transaction type
+			amount: shareAmount, // The user's share amount
+			currency: context.currency, // The original currency of the split bill
+			// Categorize based on the derived description
+			category: categorizeTransaction(
+				`Share of ${context.description || 'Shared Item'}`, // Use same description
+				'Split'
+			),
+			notes: `User share of split bill. Original total approx ${context.totalAmount} ${context.currency}. Original context: "${context.originalMessage}"`,
+			// Default direction to 'out' for split shares, as it's usually an expense
+			direction: 'out',
+			needs_clarification: null // Explicitly set clarification as null
 		};
 
-		// Apply explicit direction if provided (less common for split shares)
+		// Allow explicit direction override if user somehow specified it (e.g., "my share was 10 IN")
+		// Use the imported helper function
 		const finalTransaction = applyExplicitDirection([newTransaction], explicitDirectionIntent)[0];
 
-		appStore.addTransactions([finalTransaction]);
-		appStore.clearSplitBillWaitState(); // Clear the waiting state
+		// --- Add the transaction using transactionStore action ---
+		transactionStore.add([finalTransaction]); // Correct action call
+		// --- Clear the waiting state using conversationStore action ---
+		conversationStore.clearSplitBillWaitState(); // Correct action call
 
-		// Format currency for response message
+		// Format the amount/currency for the confirmation message using helper
 		const formattedAmount = formatCurrency(finalTransaction.amount, finalTransaction.currency);
 
+		// Return success
 		return {
 			handled: true,
-			response: `Okay, I've added your ${formattedAmount} share for the "${finalTransaction.description}".`
+			response: `Okay, I've added your ${formattedAmount} share for "${finalTransaction.description}".`
 		};
 	} else if (message.toLowerCase().includes('cancel')) {
-		// Allow user to cancel
-		appStore.clearSplitBillWaitState();
+		// --- Handle Cancellation ---
+		console.log('[SplitBillShareResponse] User cancelled split bill entry.');
+		// --- Clear the state using conversationStore action ---
+		conversationStore.clearSplitBillWaitState(); // Correct action call
 		return { handled: true, response: "Okay, I've cancelled the split bill entry." };
 	} else {
-		// User reply wasn't a clear number, ask again
+		// --- Handle Invalid Input (Not a number, not cancel) ---
+		console.warn('[SplitBillShareResponse] Could not parse share amount from:', message);
+		// Ask again, but don't clear the waiting state
 		return {
-			handled: true, // Still handled by this handler
+			handled: true, // Still handled by this handler (re-prompting)
 			response:
-				'Sorry, I need just the numeric amount for your share. How much did you personally pay?'
+				"Sorry, I need just the numeric amount for your share (e.g., '10', '15.50'). How much did you personally pay, or say 'cancel'?"
 		};
 	}
 }
 
-// Need helpers if used here (applyExplicitDirection, formatCurrency)
-// These might be better placed in a shared utils file
-function applyExplicitDirection(
-	transactions: Transaction[],
-	explicitDirection: 'in' | 'out' | null
-): Transaction[] {
-	if (!explicitDirection) return transactions;
-	return transactions.map((txn) => ({ ...txn, direction: explicitDirection }));
-}
-
-// Basic formatter for the response message
-function formatCurrency(amount: number, currencyCode: string): string {
-	// Simplified version for confirmation message - adapt as needed
-	return `${currencyCode} ${amount.toFixed(2)}`;
-}
+// Ensure applyExplicitDirection and formatCurrency are correctly imported from '$lib/utils/helpers'

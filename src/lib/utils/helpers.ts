@@ -77,7 +77,7 @@ export function textLooksLikeTransaction(text: string): boolean {
 	// 1) Digit‑based amounts: $1234.56, £1234.56, €1234.56, ¥1234.56, etc.
 	const hasNumericAmount =
 		/[\$\£\€\¥]\s?\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?/.test(lowerText) ||
-		/\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?\s*(?:dollars?|usd|cad|eur|gbp|bucks?|pounds?|euros?|yen)/.test(
+		/\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?\s*(?:dollars?|usd|cad|eur|gbp|bucks?|pounds?|euros?|yen|idr|rupiah|btc|eth)/.test(
 			lowerText
 		);
 
@@ -183,32 +183,48 @@ export function parseJsonFromAiResponse<T = any>(jsonResponse: string): T | null
 	}
 }
 
+/**
+ * Applies an explicit direction override (if provided) to a list of transactions.
+ * Returns NEW transaction objects with updated direction and potentially category.
+ * Does NOT modify the original array or objects.
+ * @param transactions The list of transactions to potentially modify.
+ * @param explicitDirection 'in', 'out', or null.
+ * @returns A new array of transactions with modifications applied.
+ */
 export function applyExplicitDirection(
-	transactions: Transaction[],
+	transactions: readonly Transaction[], // Accept readonly array
 	explicitDirection: 'in' | 'out' | null
 ): Transaction[] {
+	// Return a new mutable array copy if no explicit direction
 	if (!explicitDirection) {
 		return transactions.map((txn) => ({ ...txn }));
 	}
 
 	return transactions.map((txn) => {
-		let updatedTxn = { ...txn };
+		let updatedTxn = { ...txn }; // Create a copy to modify
+		// Only update if the direction is actually different
 		if (updatedTxn.direction !== explicitDirection) {
 			updatedTxn.direction = explicitDirection;
 
+			// Adjust category based on the NEW direction
+			// If it's now 'out', default category should be 'Expenses' if it was uncategorized
 			if (explicitDirection === 'out') {
-				if (updatedTxn.category !== 'Expenses') {
+				if (updatedTxn.category === 'Other / Uncategorized' || !updatedTxn.category) {
 					updatedTxn.category = 'Expenses';
 				}
-			} else {
+			}
+			// If it's now 'in', ensure category isn't 'Expenses'
+			else if (explicitDirection === 'in') {
 				if (updatedTxn.category === 'Expenses') {
+					// Re-categorize based on description/type or use a default non-expense category
 					const potentialCategory = categorizeTransaction(updatedTxn.description, updatedTxn.type);
+					// If categorization still results in 'Expenses', use 'Other / Uncategorized'
 					updatedTxn.category =
 						potentialCategory === 'Expenses' ? 'Other / Uncategorized' : potentialCategory;
 				}
 			}
 		}
-		return updatedTxn;
+		return updatedTxn; // Return the (potentially) modified copy
 	});
 }
 export function extractCleanJson(raw: string): string | null {

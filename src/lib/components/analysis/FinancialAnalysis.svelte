@@ -1,101 +1,103 @@
-<!-- src/lib/components/analysis/FinancialAnalysis.svelte -->
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { appStore } from '$lib/stores/AppStore';
-	import Tabs from '$lib/components/common/Tabs.svelte';
+
+	// --- Import Stores ---
+	import { transactionStore } from '$lib/stores/transactionStore';
+	import { analysisStore } from '$lib/stores/analysisStore';
+
+	// --- Import Components ---
+	import Tabs from '$lib/components/common/Tabs.svelte'; // Adjust path if needed
 	import OverviewPanel from './OverviewPanel.svelte';
 	import AnomaliesPanel from './AnomaliesPanel.svelte';
 	import PredictionsPanel from './PredictionsPanel.svelte';
-	import { isOllamaAvailable } from '$lib/services/ai/ollama-client';
 
-	import type { FinancialSummary, Anomaly } from '$lib/services/analytics';
+	// --- Import Services & Types ---
+	import { isOllamaAvailable } from '$lib/services/ai/ollama-client'; // Adjust path if needed
+	// Import types if needed for clarity or complex prop passing
+	import type { FinancialSummary, AnomalyResult, PredictionResult } from '$lib/types/types'; // Adjust path if needed
 
-	const tabNames = ['Overview', 'Anomalies', 'Predictions'];
-	let activeTab = 'Overview';
+	// --- Component State ---
+	const tabNames = ['Overview', 'Anomalies', 'Predictions']; // Source data for tabs
+	let activeTab = 'Overview'; // Local state for active tab name
+	let llmAvailable = false; // Local state for LLM check result
 
-	let summary: FinancialSummary | null = null;
-	let anomalies: { anomalies: Anomaly[] } = { anomalies: [] };
-	let projectedNet: number | null = null;
-
-	let loading = false;
-	let llmAvailable = false;
-
+	// --- Lifecycle ---
 	onMount(async () => {
-		llmAvailable = await isOllamaAvailable();
+		try {
+			llmAvailable = await isOllamaAvailable();
+		} catch (e) {
+			console.warn('FinancialAnalysis: LLM availability check failed.', e);
+			llmAvailable = false;
+		}
 	});
 
-	$: if ($appStore.transactions.length > 0) {
-		runAnalytics();
+	// --- Reactive Logic ---
+	// Trigger analysis run whenever transactions change
+	$: if ($transactionStore.length > 0) {
+		console.log('[FinancialAnalysis] Transactions changed, triggering analysisStore.run()');
+		analysisStore.run();
 	} else {
-		clearAnalytics();
+		// Reset analysis state when transactions are empty
+		console.log('[FinancialAnalysis] No transactions, resetting analysis state.');
+		analysisStore.setResults(null);
+		analysisStore.setError(null);
+		analysisStore.setLoading(false);
 	}
 
-	async function runAnalytics() {
-		loading = true;
-		try {
-			const analytics = await import('$lib/services/analytics');
-
-			const raw = await analytics.calculateFinancialSummary($appStore.transactions);
-			summary = {
-				totalIncome: raw.income,
-				totalExpenses: raw.expense,
-				netCashflow: raw.net,
-				savingsRate: raw.savingsRate
-			};
-
-			if (llmAvailable) {
-				const rawAnoms = await analytics.detectAnomalies($appStore.transactions);
-				const incoming: any[] = rawAnoms.anomalies as any[];
-				anomalies = {
-					anomalies: incoming.map((x, i) => ({
-						index: x.index ?? i,
-						risk: x.risk ?? 'unknown',
-						reason: x.reason ?? 'No reason provided'
-					}))
-				};
-			} else {
-				anomalies = { anomalies: [] };
-			}
-
-			const pred = await analytics.predictFutureTransactions($appStore.transactions);
-			projectedNet = pred?.projectedMonthlyNet ?? null;
-		} catch (err) {
-			console.error('Analytics failed', err);
-		} finally {
-			loading = false;
+	// --- Local Functions ---
+	// Updates the local activeTab state when the Tabs component dispatches a 'change' event
+	function handleTabChange(event: CustomEvent<string>) {
+		if (event.detail && tabNames.includes(event.detail)) {
+			activeTab = event.detail;
 		}
-	}
-
-	function clearAnalytics() {
-		summary = null;
-		anomalies = { anomalies: [] };
-		projectedNet = null;
-	}
-
-	function setTab(next: string) {
-		activeTab = next;
 	}
 </script>
 
-{#if $appStore.transactions.length > 0}
+{#if $transactionStore.length > 0}
 	<div class="analysis-container">
-		<h3>Financial Analysis {loading ? '(Updating…)' : ''}</h3>
-		<Tabs tabs={tabNames} active={activeTab} on:change={(e) => setTab(e.detail)} />
+		<h3>Financial Analysis {$analysisStore.loading ? '(Updating…)' : ''}</h3>
+
+		<Tabs tabs={tabNames} active={activeTab} on:change={handleTabChange} />
+
 		<div class="tab-content">
-			{#if activeTab === 'Overview' && summary}
-				<OverviewPanel {summary} />
+			{#if activeTab === 'Overview'}
+				{#if $analysisStore.summary}
+					<OverviewPanel summary={$analysisStore.summary} />
+				{:else if !$analysisStore.loading}
+					<p class="tab-placeholder">No summary data available.</p>
+				{/if}
 			{/if}
+
 			{#if activeTab === 'Anomalies'}
-				<AnomaliesPanel {anomalies} {llmAvailable} />
+				{#if $analysisStore.anomalies}
+					<AnomaliesPanel anomalies={$analysisStore.anomalies} {llmAvailable} />
+				{:else if !$analysisStore.loading}
+					<p class="tab-placeholder">No anomaly data available.</p>
+				{/if}
 			{/if}
+
 			{#if activeTab === 'Predictions'}
-				<PredictionsPanel {projectedNet} />
+				{#if $analysisStore.predictions}
+					<PredictionsPanel
+						projectedNet={$analysisStore.predictions?.projectedMonthlyNet ?? null}
+					/>
+				{:else if !$analysisStore.loading}
+					<p class="tab-placeholder">No prediction data available.</p>
+				{/if}
+			{/if}
+
+			{#if $analysisStore.loading}
+				<p class="tab-placeholder">Loading analysis...</p>
+			{/if}
+			{#if $analysisStore.error && !$analysisStore.loading}
+				<p class="tab-placeholder error">Error loading analysis: {$analysisStore.error}</p>
 			{/if}
 		</div>
 	</div>
 {/if}
 
 <style>
+	/* Styles remain the same */
 	.analysis-container {
 		margin: 20px 0;
 		background: #f8f9fa;
@@ -111,5 +113,18 @@
 	}
 	.tab-content {
 		min-height: 200px;
+		padding-top: 15px;
+		position: relative;
+	}
+	.tab-placeholder {
+		text-align: center;
+		color: #6c757d;
+		padding: 20px;
+		font-style: italic;
+	}
+	.tab-placeholder.error {
+		color: #e74c3c;
+		font-weight: bold;
+		font-style: normal;
 	}
 </style>
