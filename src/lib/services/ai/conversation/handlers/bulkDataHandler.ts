@@ -6,7 +6,6 @@ import { conversationStore } from '$lib/stores/conversationStore';
 import { transactionStore } from '$lib/stores/transactionStore';
 import { bulkProcessingStore } from '$lib/stores/bulkProcessingStore';
 
-import { getSystemPrompt, getExtractionPrompt } from '../../prompts';
 import { llmChunkTransactions } from '../bulk/llmChunkTransactions';
 import { deduplicateTransactions, getCategoryBreakdown } from '../bulk/processing-helpers';
 import { parseJsonFromAiResponse, applyExplicitDirection } from '$lib/utils/helpers';
@@ -15,6 +14,8 @@ import { BULK_DATA_THRESHOLD_LENGTH } from '../constants';
 import type { Transaction, ChunkStatus } from '$lib/types/types';
 import type { HandlerContext } from './types';
 import { parseTransactionsFromLLMResponse } from '../../extraction/llm-parser';
+import { getExtractionPrompt } from '../../prompts/extractionPrompts';
+import { getSystemPrompt } from '../../prompts/systemPrompts';
 
 export const bulkDataHandler = createConditionalHandler(
 	{
@@ -95,15 +96,19 @@ async function backgroundTask(message: string, explicitDirectionIntent: 'in' | '
 						{ role: 'system' as const, content: getSystemPrompt(today) },
 						{ role: 'user' as const, content: extractionPrompt }
 					];
-
 					const aiResponse = await llmChat(extractionMessages, {
 						temperature: 0.1,
 						rawUserText: chunkText,
 						requestJsonFormat: true
 					});
 
-					const newBatchId = `chunk-${taskId}-${chunkIndex}`;
-					chunkTransactions = parseTransactionsFromLLMResponse(aiResponse, newBatchId);
+					// Log the raw AI response for inspection
+					console.log(
+						`[BulkTask ${taskId}] Chunk ${chunkIndex} Raw AI Response:\n`,
+						JSON.stringify(aiResponse, null, 2)
+					);
+
+					chunkTransactions = parseTransactionsFromLLMResponse(aiResponse, taskId);
 
 					if (chunkTransactions.length > 0) {
 						let finalChunkTransactions = applyExplicitDirection(

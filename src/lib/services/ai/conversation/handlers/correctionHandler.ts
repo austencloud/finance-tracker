@@ -4,11 +4,12 @@ import { get } from 'svelte/store';
 import { conversationStore } from '$lib/stores/conversationStore';
 import { transactionStore } from '$lib/stores/transactionStore';
 import { categories as categoryStore } from '$lib/stores/categoryStore';
-import { getSystemPrompt, getCorrectionParsingPrompt } from '../../prompts';
 import { getLLMFallbackResponse, llmChat } from '../../llm-helpers';
 import { resolveAndFormatDate } from '$lib/utils/date';
 import type { Transaction, Category } from '$lib/types/types';
 import type { HandlerContext } from './types';
+import { getSystemPrompt } from '../../prompts/systemPrompts';
+import { getCorrectionParsingPrompt } from '../../prompts/correctionPrompts';
 
 /**
  * Handler for user messages attempting to correct a previously extracted transaction.

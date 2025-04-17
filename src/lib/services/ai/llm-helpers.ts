@@ -22,7 +22,7 @@ import {
 
 import { OLLAMA_CONFIG, OLLAMA_MODELS } from '$lib/config/ai-config'; // Adjust path
 import { logDebug } from '$lib/config/log'; // Adjust path
-import { getSystemPrompt } from './prompts'; // Adjust path
+import { getSystemPrompt } from './prompts/systemPrompts';
 
 /* ------------------------------------------------------------------ */
 /* Simple heuristics & helpers                                      */

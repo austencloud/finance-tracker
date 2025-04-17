@@ -1,10 +1,10 @@
 // src/lib/services/ai/category.ts
 
-import { getCategorySuggestionPrompt } from './prompts';
 // --- UPDATED IMPORT ---
 import { llmChat, getLLMFallbackResponse } from './llm-helpers'; // Use abstraction layer
 // --- END UPDATE ---
 import type { Category, Transaction } from '$lib/types/types';
+import { getCategorySuggestionPrompt } from './prompts/analysisPrompts';
 
 /**
  * Suggests a category for a given transaction using the configured LLM.

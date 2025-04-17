@@ -3,10 +3,11 @@ import { get } from 'svelte/store';
 import { conversationStore } from '$lib/stores/conversationStore';
 import { transactionStore } from '$lib/stores/transactionStore';
 import { getHandlerChain } from './handlers/setup';
-import { getSystemPrompt, getSummaryPrompt } from '../prompts';
 import { llmChat, getLLMFallbackResponse } from '../llm-helpers';
 import { formatCurrency as formatCurrencyUtil } from '$lib/utils/helpers';
 import { OllamaApiError } from '../ollama-client';
+import { getSystemPrompt } from '../prompts/systemPrompts';
+import { getSummaryPrompt } from '../prompts/analysisPrompts';
 
 // --- Regex helpers for direction intent detection ---
 const BULK_DIRECTION_ALL_IN_REGEX = /\b(all|these are all|mark all as)\s+(in|income|deposits?)\b/i;

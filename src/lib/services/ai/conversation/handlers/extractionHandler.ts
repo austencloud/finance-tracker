@@ -9,12 +9,14 @@ import {
   applyExplicitDirection,
   formatCurrency
 } from '$lib/utils/helpers';
-import { getExtractionPrompt, getSystemPrompt, getSplitItemDescriptionPrompt } from '../../prompts';
 import { parseTransactionsFromLLMResponse } from '../../extraction/llm-parser';
 import { getLLMFallbackResponse, llmChat } from '../../llm-helpers';
 import { resolveAndFormatDate } from '$lib/utils/date';
 import type { Transaction } from '$lib/types/types';
 import type { HandlerContext } from './types';
+import { getSplitItemDescriptionPrompt } from '../../prompts/analysisPrompts';
+import { getExtractionPrompt } from '../../prompts/extractionPrompts';
+import { getSystemPrompt } from '../../prompts/systemPrompts';
 
 // Helper functions
 // Normalizes description for consistent key generation

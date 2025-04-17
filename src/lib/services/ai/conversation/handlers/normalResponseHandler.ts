@@ -3,9 +3,9 @@ import { createConditionalHandler } from './factories';
 import { get } from 'svelte/store';
 import { conversationStore } from '$lib/stores/conversationStore';
 import { llmChat, getLLMFallbackResponse } from '../../llm-helpers';
-import { getSystemPrompt } from '../../prompts';
 import type { ConversationMessage } from '$lib/types/types';
 import type { HandlerContext } from './types';
+import { getSystemPrompt } from '../../prompts/systemPrompts';
 
 /**
  * Handler for general conversation that isn't handled by other more specific handlers.

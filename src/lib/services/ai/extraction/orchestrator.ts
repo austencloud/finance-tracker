@@ -1,6 +1,5 @@
 // src/lib/services/ai/extraction/orchestrator.ts
 
-import { getExtractionPrompt, getOptimizedExtractionPrompt } from '../prompts';
 // Ensure local extractors are imported
 import { enhancedLocalExtraction } from './local-extractors';
 import { parseTransactionsFromLLMResponse } from './llm-parser';
@@ -8,6 +7,7 @@ import type { Transaction } from '$lib/types/types';
 import { v4 as uuidv4 } from 'uuid'; // <-- Import uuid
 import { llmGenerateJson } from '../llm-helpers';
 import { isOllamaAvailable } from '../ollama-client';
+import { getExtractionPrompt, getOptimizedExtractionPrompt } from '../prompts/extractionPrompts';
 
 // Cache remains the same
 const extractionCache = new Map<string, { timestamp: number; data: Transaction[] }>();

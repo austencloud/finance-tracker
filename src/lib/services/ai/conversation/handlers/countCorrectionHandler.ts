@@ -5,11 +5,12 @@ import { v4 as uuidv4 } from 'uuid';
 import { conversationStore } from '$lib/stores/conversationStore';
 import { transactionStore } from '$lib/stores/transactionStore';
 import { getLLMFallbackResponse, llmChat } from '../../llm-helpers';
-import { getSystemPrompt, getExtractionPrompt } from '../../prompts';
 import { parseTransactionsFromLLMResponse } from '../../extraction/llm-parser';
 import { applyExplicitDirection } from '$lib/utils/helpers';
 import type { HandlerContext } from './types';
 import type { Transaction } from '$lib/types/types';
+import { getExtractionPrompt } from '../../prompts/extractionPrompts';
+import { getSystemPrompt } from '../../prompts/systemPrompts';
 
 /**
  * Handler for messages indicating the number of transactions extracted was incorrect.

@@ -94,7 +94,7 @@ export const splitBillDetectionHandler = createConditionalHandler(
 		const { message } = context;
 
 		// Import needed dependencies
-		const { getSplitItemDescriptionPrompt } = await import('$lib/services/ai/prompts');
+		const { getSplitItemDescriptionPrompt } = await import('$lib/services/ai/prompts/extractionPrompts');
 		const { llmChat } = await import('$lib/services/ai/llm-helpers');
 		const { resolveAndFormatDate } = await import('$lib/utils/date');
 

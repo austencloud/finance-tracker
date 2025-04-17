@@ -10,7 +10,7 @@
 
 	// --- LLM/Prompt Imports (Keep if generateExample is kept here) ---
 	import { llmChat, makeSystemMsg, makeUserMsg } from '$lib/services/ai/llm-helpers';
-	import { getSystemPrompt } from '$lib/services/ai/prompts';
+	import { getSystemPrompt } from '$lib/services/ai/prompts/systemPrompts';
 
 	// --- Component State ---
 	let userInput = '';
@@ -75,6 +75,8 @@
 				forceSimple: true, // Use faster model for examples
 				rawUserText: ''
 			});
+
+
 			const example = aiResponse.split('\n')[0].trim().replace(/^"|"$/g, '');
 			userInput = example;
 			// Automatically submit after generating example
@@ -89,6 +91,10 @@
 		const today = new Date().toISOString().split('T')[0];
 		const system = getSystemPrompt(today);
 		const prompt = `Generate a user-style transaction input that describes splitting a bill or expense with others. The message should clearly mention splitting, the total amount, and optionally the context (e.g. dinner, rent, groceries). Use natural, realistic phrasing. Output only one line, no explanation.`;
+		
+		
+		
+		
 		try {
 			const aiResponse = await llmChat([makeSystemMsg(system), makeUserMsg(prompt)], {
 				temperature: 0.8,
