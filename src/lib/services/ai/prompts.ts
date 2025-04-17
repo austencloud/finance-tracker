@@ -1,6 +1,6 @@
 // src/lib/services/ai/prompts.ts
 import type { Category, Transaction } from '$lib/stores/types';
-import { formatCurrency } from '$lib/utils/currency';
+import { formatCurrency } from '$lib/utils/helpers';
 
 /**
  * Get the system message for the conversation, including today's date.
@@ -172,9 +172,12 @@ ${getEnhancedSplitBillInstructions(todayDateString)}
 - DEFAULT TO "unknown" direction when genuinely unclear – NEVER guess
 
 **CURRENCY HANDLING:**
-- Recognize various currency symbols (£, €, ¥, ₹, etc.) not just dollar signs
-- When currency doesn't match user's expectations, ask for clarification
-- For all currency symbols, convert to numeric value in the amount field
+- Recognize various currency symbols (£, €, ¥, ₹, etc.) AND currency codes (USD, CAD, EUR, JPY etc.).
+- **Extract both the numeric amount AND the corresponding ISO 4217 currency code (e.g., "USD", "JPY", "EUR").**
+- **Do NOT convert the amount to a different currency.** Extract the value as it appears.
+- If no currency symbol or code is explicitly mentioned, you should assume "USD".
+- Include the detected currency code in the JSON output.
+
 
 **REFERENCE RESOLUTION:**
 - When users refer to past transactions vaguely (e.g., "that purchase", "the transaction"), ask: "Which specific transaction are you referring to?"
@@ -350,11 +353,12 @@ Output ONLY valid JSON **and nothing else**, starting immediately with the ` +
 
 Required JSON fields for each transaction:
 1. date: (String) “YYYY-MM-DD” or “unknown”.
-2. description: (String) What the transaction was for (merchant, person, service, item). **Use Title Case** (e.g. “Amazon Purchase”).
-3. details: (String) Extra context (e.g. “for birthday gift”) or "".
-4. type: (String) Best guess (“Card”, “Cash”, “ACH”, “Deposit”, etc.) or “unknown”.
-5. amount: (Number) Numeric amount without symbol (e.g. 42.50). Must be > 0.
-6. direction: (String) “in” for money received, “out” for money spent. If unclear, “unknown”.
+2. description: (String) What the transaction was for... **Use Title Case**...
+3. details: (String) Extra context... or "".
+4. type: (String) Best guess... or “unknown”.
+5. amount: (Number) Numeric amount. **Do NOT include symbols or perform conversions.** Must be > 0.
+6. currency: (String) **The ISO 4217 currency code (e.g., "USD", "JPY", "EUR"). Assume "USD" if not specified in the text.**
+7. direction: (String) “in” for money received, “out” for money spent. If unclear, “unknown”.
 
 Create a separate transaction object for EACH distinct transaction mentioned. Be thorough—even brief mentions count. Resolve relative dates like “today”, “yesterday”, “last Monday” etc. to “YYYY-MM-DD” based on today being ${todayDateString}.
 

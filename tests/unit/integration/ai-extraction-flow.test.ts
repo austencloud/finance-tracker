@@ -37,7 +37,7 @@ vi.mock('$lib/services/ai/deepseek-client', () => {
 		llmChat: vi.fn().mockResolvedValue(mockJsonResponseStringData),
 		deepseekGenerateJson: vi.fn().mockResolvedValue(mockJsonResponseStringData), // Mock this too
 		getLLMFallbackResponse: vi.fn((err) => `Fallback error: ${err?.message || 'Unknown'}`),
-		isLLMAvailable: vi.fn().mockResolvedValue(true)
+		isOllamaAvailable: vi.fn().mockResolvedValue(true)
 	};
 });
 
@@ -152,7 +152,7 @@ describe('AI Extraction Flow Integration', () => {
 		const analyticsMock = await vi.importMock('$lib/services/analytics');
 		// Check if analysis functions were called (due to addTransactions triggering analysis)
 		expect(analyticsMock.calculateFinancialSummary).toHaveBeenCalled();
-		// Depending on isLLMAvailable mock, these might or might not be called
+		// Depending on isOllamaAvailable mock, these might or might not be called
 		expect(analyticsMock.detectAnomalies).toHaveBeenCalled();
 		expect(analyticsMock.predictFutureTransactions).toHaveBeenCalled();
 	});

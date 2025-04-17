@@ -82,17 +82,7 @@ export async function testLLMWithSimpleRequest(): Promise<boolean> {
 	}
 }
 
-export async function isLLMAvailable(maxAgeMs = 60_000): Promise<boolean> {
-	if (Date.now() - lastPing < maxAgeMs) return lastPingOK;
-	try {
-		await ollamaChat([{ role: 'user', content: 'ping' }], { temperature: 0 }, false);
-		lastPingOK = true;
-	} catch {
-		lastPingOK = false;
-	}
-	lastPing = Date.now();
-	return lastPingOK;
-}
+
 
 /* ------------------------------------------------------------------ */
 /*  Core chat & JSON generation                                      */

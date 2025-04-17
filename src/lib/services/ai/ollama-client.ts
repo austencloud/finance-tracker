@@ -229,7 +229,7 @@ export async function ollamaChat(
 
 		const data = await response.json();
 		if (data && typeof data?.message?.content === 'string') {
-			console.debug('[ollamaChat] ↩︎ response ok (chars:', data.message.content.length, ')');
+			console.debug('[ollamaChat] ↩︎ response ok, message:', data.message.content);
 			return data.message.content;
 		}
 		// Handle Ollama's response structure

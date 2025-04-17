@@ -1,81 +1,42 @@
 <script lang="ts">
 	import { appStore } from '$lib/stores/AppStore';
 	import type { Transaction, Category, SortField } from '$lib/stores/types';
+	// *** Assuming formatCurrency is here or imported from utils ***
+	import { formatCurrency } from '$lib/utils/helpers'; // Or your actual path
 	import { onDestroy } from 'svelte';
-	// --- Re-add derived import ---
 	import { derived } from 'svelte/store';
-
-	// --- Local Helper Functions (remain the same) ---
-	function formatCurrency(amount: number | string): string {
-		const num = typeof amount === 'string' ? parseFloat(amount.replace(/[$,]/g, '')) : amount;
-		if (isNaN(num)) {
-			console.warn(`[formatCurrency] Invalid amount received: ${amount}`);
-			return '$0.00';
-		}
-		return num.toLocaleString('en-US', {
-			style: 'currency',
-			currency: 'USD',
-			minimumFractionDigits: 2,
-			maximumFractionDigits: 2
-		});
-	}
 
 	function handleItemClick(transactionId: string) {
 		console.log(`[ExtractedDataDisplay] Item clicked: ${transactionId}`);
 		appStore.selectTransactionForDetails(transactionId);
 	}
 
-	// --- Use derived store calling the selector ---
-	// This explicitly tells Svelte: "This value depends on appStore".
-	// When appStore changes, Svelte re-runs this function.
 	const sortedFilteredTransactions = derived(appStore, ($appStore) => {
-		// The calculation simply calls the selector method from the central store.
 		return appStore.getSortedFilteredTransactions();
 	});
-
-	// --- REMOVED the reactive declaration: $: sortedFilteredTransactions = ... ---
 </script>
 
 <div class="data-display-container">
 	<h4>Transactions ({$sortedFilteredTransactions.length} matching filters)</h4>
 
-	{#if $sortedFilteredTransactions.length === 0}
-		{#if $appStore.transactions.length === 0}
-			<p class="placeholder">No transactions recorded yet...</p>
-		{:else}
-			<p class="placeholder">No transactions match current filters...</p>
-		{/if}
-	{:else}
+	{#if $sortedFilteredTransactions.length === 0}{:else}
 		<ul class="transaction-list">
 			{#each $sortedFilteredTransactions as txn (txn.id)}
 				<button
 					type="button"
 					class="transaction-item interactive"
 					on:click={() => handleItemClick(txn.id)}
-					on:keydown={(e) => {
-						if (e.key === 'Enter' || e.key === ' ') handleItemClick(txn.id);
-					}}
-					tabindex="0"
-					title="Click to view/edit details for {txn.description}"
 					aria-label="View details for transaction on {txn.date} for {txn.description} amount {formatCurrency(
-						txn.amount
+						txn.amount,
+						txn.currency // <-- Pass currency here too for accessibility
 					)}"
 				>
 					<div class="date">{txn.date === 'unknown' ? 'Date?' : txn.date}</div>
 					<div class="desc">{txn.description === 'unknown' ? 'Description?' : txn.description}</div>
 					<div class="amount {txn.direction === 'out' ? 'expense-amount' : 'income-amount'}">
-						{formatCurrency(txn.amount)}
+						{formatCurrency(txn.amount, txn.currency)}
 						{txn.direction !== 'unknown' ? ` (${txn.direction})` : ''}
 					</div>
-					{#if txn.notes}
-						<div class="notes">Notes: {txn.notes}</div>
-					{/if}
-					{#if txn.type && txn.type !== 'unknown'}
-						<div class="type">Type: {txn.type}</div>
-					{/if}
-					{#if txn.category && txn.category !== 'Other / Uncategorized'}
-						<div class="category">Category: {txn.category}</div>
-					{/if}
 				</button>
 			{/each}
 		</ul>
@@ -105,16 +66,7 @@
 		font-size: 1.1em;
 		font-weight: 600;
 	}
-	.placeholder {
-		color: #888;
-		text-align: center;
-		margin-top: 40px;
-		font-style: italic;
-		flex-grow: 1;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
+
 	.transaction-list {
 		list-style: none;
 		padding: 0;
@@ -169,16 +121,5 @@
 	.amount.expense-amount {
 		color: #c0392b;
 	}
-	.notes,
-	.type,
-	.category {
-		font-size: 12px;
-		color: #555;
-		margin-top: 5px;
-		display: block;
-	}
-	.category {
-		font-style: italic;
-		color: #666;
-	}
+
 </style>

@@ -6,7 +6,7 @@ import {
 	detectAnomalies,
 	predictFutureTransactions
 } from '$lib/services/analytics';
-import { isLLMAvailable } from '$lib/services/ai/llm-helpers';
+import { isOllamaAvailable } from '$lib/services/ai/ollama-client';
 
 import type {
 	AppState,
@@ -598,7 +598,7 @@ export const appStore = {
 		appStore.setAnalysisLoading(true);
 		try {
 			const currentTransactions = [...state.transactions];
-			const llmCheck = await isLLMAvailable();
+			const llmCheck = await isOllamaAvailable();
 
 			const summaryPromise = calculateFinancialSummary(currentTransactions);
 			const anomaliesPromise = llmCheck

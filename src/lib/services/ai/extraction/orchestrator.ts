@@ -6,7 +6,8 @@ import { enhancedLocalExtraction } from './local-extractors';
 import { parseTransactionsFromLLMResponse } from './llm-parser';
 import type { Transaction } from '$lib/stores/types';
 import { v4 as uuidv4 } from 'uuid'; // <-- Import uuid
-import { isLLMAvailable, llmGenerateJson } from '../llm-helpers';
+import { llmGenerateJson } from '../llm-helpers';
+import { isOllamaAvailable } from '../ollama-client';
 
 // Cache remains the same
 const extractionCache = new Map<string, { timestamp: number; data: Transaction[] }>();
@@ -51,7 +52,7 @@ export async function extractTransactionsFromText(text: string): Promise<Transac
 	// --- Strategy 2: LLM API Extraction Fallback ---
 	if (result.length === 0) {
 		// Only try LLM if local methods found nothing
-		const llmCouldBeAvailable = await isLLMAvailable();
+		const llmCouldBeAvailable = await isOllamaAvailable();
 		if (llmCouldBeAvailable && text.length > 0 && text.length <= 15000) {
 			console.log('[Orchestrator] Attempting LLM extraction...');
 			try {

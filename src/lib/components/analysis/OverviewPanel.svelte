@@ -1,6 +1,6 @@
 <script lang="ts">
 	import StatCard from '$lib/components/common/StatCard.svelte';
-	import { formatCurrency } from '$lib/utils/format';
+	import { formatCurrency } from '$lib/utils/helpers';
 	export let summary: {
 		totalIncome: number;
 		totalExpenses: number;

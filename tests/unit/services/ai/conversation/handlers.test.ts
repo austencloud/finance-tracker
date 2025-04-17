@@ -140,7 +140,7 @@ vi.mock('$lib/services/ai/deepseek-client', () => ({
 	llmChat: vi.fn().mockResolvedValue(mockLLMJsonResponseString),
 	deepseekGenerateJson: vi.fn().mockResolvedValue(mockLLMJsonResponseString),
 	getLLMFallbackResponse: vi.fn((err) => `Fallback error: ${err?.message || 'Unknown'}`),
-	isLLMAvailable: vi.fn().mockResolvedValue(true)
+	isOllamaAvailable: vi.fn().mockResolvedValue(true)
 }));
 
 const mockParsedTransactions: Transaction[] = [
@@ -153,7 +153,8 @@ const mockParsedTransactions: Transaction[] = [
 		amount: 5.75,
 		category: 'Expenses',
 		notes: 'Latte',
-		direction: 'out'
+		direction: 'out',
+		currency: 'USD'
 	}
 ];
 vi.mock('$lib/services/ai/extraction/llm-parser', () => ({
@@ -195,7 +196,6 @@ describe('Conversation Handlers', () => {
 			const { parseTransactionsFromLLMResponse } = await import(
 				'$lib/services/ai/extraction/llm-parser'
 			);
-			
 
 			const specificMockParsedTransactions: Transaction[] = [
 				{
@@ -207,7 +207,8 @@ describe('Conversation Handlers', () => {
 					amount: 5.75,
 					category: 'Expenses',
 					notes: 'Latte',
-					direction: 'out'
+					direction: 'out',
+					currency: 'USD'
 				}
 			];
 			vi.mocked(parseTransactionsFromLLMResponse).mockReturnValue(specificMockParsedTransactions);
@@ -256,7 +257,8 @@ describe('Conversation Handlers', () => {
 				amount: 5.75,
 				category: 'Expenses',
 				notes: 'Latte',
-				direction: 'out'
+				direction: 'out',
+				currency: 'USD'
 			};
 			vi.mocked(parseTransactionsFromLLMResponse).mockReturnValue([{ ...existingTxnData }]);
 
@@ -299,7 +301,8 @@ describe('Conversation Handlers', () => {
 				amount: 5.75,
 				category: 'Expenses',
 				notes: '',
-				direction: 'out'
+				direction: 'out',
+				currency: 'USD'
 			};
 			const gasTxnData: Transaction = {
 				id: 'txn-gas-new',
@@ -310,7 +313,8 @@ describe('Conversation Handlers', () => {
 				amount: 40.0,
 				category: 'Expenses',
 				notes: '',
-				direction: 'out'
+				direction: 'out',
+				currency: 'USD'
 			};
 
 			vi.mocked(parseTransactionsFromLLMResponse).mockReturnValue([coffeeTxnData, gasTxnData]);

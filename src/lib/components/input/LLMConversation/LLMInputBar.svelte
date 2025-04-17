@@ -13,15 +13,6 @@
 	let showStarterPanel = false;
 	$: isProcessingValue = $appStore.conversation.isProcessing;
 
-	const starterResponses = [
-		{ label: '💰 Income', text: 'I got paid $1,500 from my job on April 12' },
-		{ label: '💸 Expense', text: 'I spent $42.50 at the grocery store yesterday' },
-		{
-			label: '📝 Multiple',
-			text: 'I paid $800 for rent, $120 for electricity, and received $50 from a friend'
-		},
-		{ label: '❓ Question', text: 'What was my total income so far?' }
-	];
 
 	function useStarterResponse(text: string) {
 		userInput = text;
@@ -38,9 +29,6 @@
 		}, 300);
 	}
 
-	function toggleStarterPanel() {
-		showStarterPanel = !showStarterPanel;
-	}
 
 	function handleSubmit() {
 		const currentInput = userInput.trim();

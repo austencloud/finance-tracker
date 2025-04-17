@@ -1,21 +1,15 @@
-<!-- src/App.svelte (partial) -->
 <script lang="ts">
 	import LLMWithDataLayout from '$lib/components/input/LLMConversation/LLMWithDataLayout.svelte';
-	// Import the Analysis component
 	import FinancialAnalysis from '$lib/components/analysis/FinancialAnalysis.svelte';
+	import TransactionModal from '$lib/components/transactions/TransactionModal.svelte'; // <-- IMPORT THE MODAL
 	import { onMount } from 'svelte';
-
-	// Import appStore directly
 	import { appStore } from '$lib/stores/AppStore';
 	import { get } from 'svelte/store';
-
-	// Import necessary services
 	import { generateHTMLReport } from '$lib/services/exporter';
 	import { initialize } from '$lib/services/ai/conversation/conversationService';
-
-	// Import model discovery
 	import { initializeModelDiscovery } from '$lib/services/ai/model-discovery';
-	import { isLLMAvailable } from '$lib/services/ai/llm-helpers';
+	import { isOllamaAvailable } from '$lib/services/ai/ollama-client';
+	
 
 	onMount(async () => {
 		initialize(); // Initialize conversation service
@@ -29,10 +23,8 @@
 
 		// Check if any LLM is available
 		try {
-			const llmAvailable = await isLLMAvailable();
-			// Update the store with LLM availability
-			appStore.setLLMAvailability(llmAvailable);
-
+			const llmAvailable = await isOllamaAvailable();
+			appStore.setLLMAvailability(llmAvailable); // Update the store
 			if (!llmAvailable) {
 				console.warn('No LLM available. App will have limited functionality.');
 			}
@@ -41,10 +33,10 @@
 			appStore.setLLMAvailability(false);
 		}
 
-		// Trigger initial analysis if needed
-		if (get(appStore).transactions.length > 0) {
-			appStore.runFinancialAnalysis();
-		}
+		// Trigger initial analysis if needed (Removed - FinancialAnalysis component handles this internally)
+		// if (get(appStore).transactions.length > 0) {
+		//  appStore.runFinancialAnalysis(); // This might be redundant if FinancialAnalysis runs itself
+		// }
 	});
 
 	// Handler for report generation
@@ -78,7 +70,10 @@
 	</div>
 </main>
 
+<TransactionModal />
+
 <style>
+	/* Styles remain the same */
 	.processing-indicator {
 		text-align: center;
 		padding: 5px;

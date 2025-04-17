@@ -1,6 +1,7 @@
 <!-- src/lib/components/analysis/PredictionsPanel.svelte -->
 <script lang="ts">
-	import { formatCurrency } from '$lib/utils/format';
+	import { formatCurrency } from "$lib/utils/helpers";
+
 	export let projectedNet: number | null;
 </script>
 

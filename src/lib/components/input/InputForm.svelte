@@ -8,7 +8,8 @@
 	// Import services (assuming they use appStore internally)
 	import { parseTransactionData, getSampleData } from '$lib/services/parser';
 	import { processBulkTransactions } from '$lib/services/bulkProcessingOrchestrator';
-	import { isLLMAvailable } from '$lib/services/ai/llm-helpers';
+	import { isOllamaAvailable } from '$lib/services/ai/ollama-client';
+
 	import { v4 as uuidv4 } from 'uuid';
 
 	// Import types
@@ -28,7 +29,7 @@
 	// --- Logic Remains Mostly the Same ---
 	const checkLLMAvailability = async () => {
 		try {
-			llmAvailable = await isLLMAvailable();
+			llmAvailable = await isOllamaAvailable();
 			if (!llmAvailable) {
 				inputMode = 'standard';
 			}

@@ -23,7 +23,6 @@ import { handleCountCorrection } from './handlers/handleCountCorrection';
 import { handleBulkDirectionCorrection } from './handlers/handleBulkDirectionCorrection';
 import { handleFillDetails } from './handlers/handleFillDetails';
 import { handleCorrection } from './handlers/handleCorrection';
-import { handleInitialData } from './handlers/handleInitialData';
 import { handleExtraction } from './handlers/handleExtraction';
 import { handleNormalResponse } from './handlers/handleNormalResponse';
 
@@ -110,7 +109,6 @@ export async function sendMessage(message: string): Promise<void> {
 		handleBulkDirectionCorrection,
 		handleFillDetails,
 		handleCorrection,
-		handleInitialData,
 		handleExtraction,
 		handleNormalResponse,
 		handleMood

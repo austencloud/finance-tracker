@@ -22,6 +22,7 @@ export interface Transaction {
 	description: string;
 	type: string;
 	amount: number;
+	currency: string; // <-- ADD THIS LINE (e.g., "USD", "JPY", "EUR")
 	category: Category;
 	notes: string;
 	direction: 'in' | 'out' | 'unknown';

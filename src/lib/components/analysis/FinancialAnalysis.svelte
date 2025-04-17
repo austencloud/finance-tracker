@@ -6,12 +6,9 @@
 	import OverviewPanel from './OverviewPanel.svelte';
 	import AnomaliesPanel from './AnomaliesPanel.svelte';
 	import PredictionsPanel from './PredictionsPanel.svelte';
-	import { isLLMAvailable } from '$lib/services/ai/llm-helpers';
+	import { isOllamaAvailable } from '$lib/services/ai/ollama-client';
 
-	import type {
-		FinancialSummary,
-		Anomaly
-	} from '$lib/services/analytics';
+	import type { FinancialSummary, Anomaly } from '$lib/services/analytics';
 
 	const tabNames = ['Overview', 'Anomalies', 'Predictions'];
 	let activeTab = 'Overview';
@@ -24,7 +21,7 @@
 	let llmAvailable = false;
 
 	onMount(async () => {
-		llmAvailable = await isLLMAvailable();
+		llmAvailable = await isOllamaAvailable();
 	});
 
 	$: if ($appStore.transactions.length > 0) {
@@ -40,10 +37,10 @@
 
 			const raw = await analytics.calculateFinancialSummary($appStore.transactions);
 			summary = {
-				totalIncome:   raw.income,
+				totalIncome: raw.income,
 				totalExpenses: raw.expense,
-				netCashflow:   raw.net,
-				savingsRate:   raw.savingsRate,
+				netCashflow: raw.net,
+				savingsRate: raw.savingsRate
 			};
 
 			if (llmAvailable) {
@@ -51,9 +48,9 @@
 				const incoming: any[] = rawAnoms.anomalies as any[];
 				anomalies = {
 					anomalies: incoming.map((x, i) => ({
-						index:  x.index   ?? i,
-						risk:   x.risk    ?? 'unknown',
-						reason: x.reason  ?? 'No reason provided'
+						index: x.index ?? i,
+						risk: x.risk ?? 'unknown',
+						reason: x.reason ?? 'No reason provided'
 					}))
 				};
 			} else {

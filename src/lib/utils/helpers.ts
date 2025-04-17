@@ -99,13 +99,43 @@ export function textLooksLikeTransaction(text: string): boolean {
 	return hasNumericAmount || hasWordAmount || (hasKeyword && hasDate);
 }
 
-export function formatCurrency(amount: number): string {
-	if (typeof amount !== 'number' || isNaN(amount)) {
-		return '$0.00';
+// Example modification (place in a central utils file if used in multiple places)
+// src/lib/utils/format.ts (or similar)
+
+export function formatCurrency(
+	amount: number | string | null | undefined,
+	currencyCode: string = 'USD'
+): string {
+	const num = typeof amount === 'string' ? parseFloat(amount.replace(/[$,]/g, '')) : (amount ?? 0);
+
+	if (isNaN(num)) {
+		console.warn(`[formatCurrency] Invalid amount received: ${amount}`);
+		// Consider a different fallback for NaN
+		return `${currencyCode} ???`;
 	}
-	return `$${amount.toFixed(2)}`;
+
+	try {
+		return num.toLocaleString('en-US', {
+			// 'en-US' can format most currencies correctly based on code
+			style: 'currency',
+			currency: currencyCode, // Use the provided currency code
+			minimumFractionDigits: 2,
+			maximumFractionDigits: 2
+		});
+	} catch (e) {
+		// Handle invalid currency codes gracefully
+		console.error(
+			`[formatCurrency] Error formatting amount ${num} with currency ${currencyCode}:`,
+			e
+		);
+		// Fallback display if toLocaleString fails
+		return `${currencyCode} ${num.toFixed(2)}`;
+	}
 }
 
+// In your components (e.g., ExtractedDataDisplay.svelte):
+// Replace: {formatCurrency(txn.amount)}
+// With:    {formatCurrency(txn.amount, txn.currency)}
 export function fixCommonJsonErrors(jsonStr: string): string {
 	if (!jsonStr || typeof jsonStr !== 'string') return '';
 	let fixed = jsonStr.trim();

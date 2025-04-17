@@ -4,7 +4,7 @@
 
 	// Import services
 	import { suggestCategory } from '$lib/services/ai/category';
-	import { isLLMAvailable } from '$lib/services/ai/llm-helpers';
+	import { isOllamaAvailable } from '$lib/services/ai/ollama-client';
 
 	// Import types
 	import type { Category, Transaction } from '$lib/stores/types';
@@ -24,7 +24,7 @@
 	// Check if LLM is available
 	const checkLLMAvailability = async () => {
 		try {
-			llmAvailable = await isLLMAvailable();
+			llmAvailable = await isOllamaAvailable();
 		} catch (error) {
 			llmAvailable = false;
 		}
