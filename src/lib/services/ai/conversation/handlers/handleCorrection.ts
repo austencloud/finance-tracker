@@ -3,7 +3,7 @@
 import { get } from 'svelte/store';
 import { v4 as uuidv4 } from 'uuid';
 import { appStore } from '$lib/stores/AppStore';
-import type { Transaction } from '$lib/stores/types';
+import type { Transaction } from '$lib/types/types';
 import { getSystemPrompt } from '../../prompts';
 import { getLLMFallbackResponse, llmChat } from '../../llm-helpers';
 

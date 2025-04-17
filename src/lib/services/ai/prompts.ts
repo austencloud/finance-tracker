@@ -1,5 +1,5 @@
 // src/lib/services/ai/prompts.ts
-import type { Category, Transaction } from '$lib/stores/types';
+import type { Category, Transaction } from '$lib/types/types';
 import { formatCurrency } from '$lib/utils/helpers';
 
 /**
@@ -147,6 +147,26 @@ Output JSON:
 \`\`\`
 `.trim();
 }
+export function getSplitItemDescriptionPrompt(originalMessage: string): string {
+	// Use template literals for easier multi-line string formatting
+	return `
+Analyze the following user message which mentions splitting a bill or cost:
+---
+"${originalMessage}"
+---
+
+Based ONLY on the message above, what specific item, service, or event was being split?
+
+Respond with ONLY a short, descriptive noun phrase (2-4 words maximum, using Title Case).
+
+Good Examples: "Dinner Bill", "Groceries", "Cab Fare", "Hotel Room", "Concert Tickets", "Lunch", "Coffee Run"
+Bad Examples: "Split Bill", "Item", "The cost mentioned", "¥25k", "$120 bill"
+
+If the specific item isn't clear from the text, respond with the exact phrase "Shared Item".
+Do not include amounts, currencies, dates, or how many people were involved. Just the item/service.
+`.trim(); // trim() removes leading/trailing whitespace including the initial newline
+}
+
 // src/lib/services/ai/prompts.ts
 export function getSystemPrompt(todayDateString: string): string {
 	return `

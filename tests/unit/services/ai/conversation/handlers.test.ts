@@ -6,7 +6,7 @@ import { get } from 'svelte/store'; // Keep for potential future use
 import { handleExtraction } from '$lib/services/ai/conversation/handlers/handleExtraction';
 
 // Import AppStore types
-import type { AppState, Transaction, ConversationMessage, Category } from '$lib/stores/types';
+import type { AppState, Transaction, ConversationMessage, Category } from '$lib/types/types';
 import { llmChat } from '$lib/services/ai/llm-helpers';
 
 // --- Mock AppStore Correctly ---

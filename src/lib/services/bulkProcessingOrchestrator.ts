@@ -2,7 +2,7 @@
 
 import { appStore } from '$lib/stores/AppStore';
 import { v4 as uuidv4 } from 'uuid';
-import type { Transaction } from '$lib/stores/types';
+import type { Transaction } from '$lib/types/types';
 
 // --- UPDATED IMPORT: Use abstraction layer ---
 import { llmChat } from './ai/llm-helpers';

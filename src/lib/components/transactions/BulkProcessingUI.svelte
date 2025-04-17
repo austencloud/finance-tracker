@@ -2,7 +2,7 @@
 	import { appStore } from '$lib/stores/AppStore';
 	import { derived, get } from 'svelte/store';
 	import { tick } from 'svelte';
-	import type { Transaction, ProcessingChunk } from '$lib/stores/types'; // Added ProcessingChunk type
+	import type { Transaction, ProcessingChunk } from '$lib/types/types'; // Added ProcessingChunk type
 
 	// Recreate derived stats locally - Updated transactionCount logic
 	const processingStats = derived(appStore, ($appStore) => {

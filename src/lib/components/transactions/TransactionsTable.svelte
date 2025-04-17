@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { derived } from 'svelte/store'; // Import derived
 	import { appStore } from '$lib/stores/AppStore'; // Import the central store
-	import type { Category, Transaction } from '$lib/stores/types'; // Keep type imports
+	import type { Category, Transaction } from '$lib/types/types'; // Keep type imports
 
 	// --- Local Derived Store for Sorted Transactions ---
 	// Recreate the sorting/filtering logic reactively based on appStore

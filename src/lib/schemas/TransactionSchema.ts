@@ -1,5 +1,5 @@
 // src/lib/schemas/TransactionSchema.ts
-import type { Category } from '$lib/stores/types';
+import type { Category } from '$lib/types/types';
 import { z } from 'zod';
 
 export const TransactionSchema = z.object({

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { appStore } from '$lib/stores/AppStore';
-	import type { Transaction, Category, SortField } from '$lib/stores/types';
+	import type { Transaction, Category, SortField } from '$lib/types/types';
 	// *** Assuming formatCurrency is here or imported from utils ***
 	import { formatCurrency } from '$lib/utils/helpers'; // Or your actual path
 	import { onDestroy } from 'svelte';

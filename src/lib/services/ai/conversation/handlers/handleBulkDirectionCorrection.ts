@@ -5,7 +5,7 @@ import { appStore } from '$lib/stores/AppStore'; // *** Import central appStore 
 // import { extractedTransactions } from '../../conversation/conversationDerivedStores';
 
 // --- Import necessary types and helpers ---
-import type { Transaction } from '$lib/stores/types';
+import type { Transaction } from '$lib/types/types';
 import { categorizeTransaction } from '$lib/services/categorizer'; // Keep if applyExplicitDirection uses it
 
 // --- Locally Defined Constants (Keep or move to shared constants) ---

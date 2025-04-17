@@ -14,7 +14,7 @@ import {
 	// textLooksLikeTransaction // Not used in placeholder
 } from '$lib/utils/helpers';
 // Import Transaction type if needed for future implementation
-import type { Transaction } from '$lib/stores/types';
+import type { Transaction } from '$lib/types/types';
 
 /**
  * Handles requests to fill in missing details (like category, date) for specific or all transactions.

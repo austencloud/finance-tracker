@@ -6,7 +6,7 @@ import { getLLMFallbackResponse, llmChat } from '../../llm-helpers';
 import { getSystemPrompt, getExtractionPrompt } from '../../prompts';
 import { parseTransactionsFromLLMResponse } from '../../extraction/llm-parser';
 import { applyExplicitDirection } from '$lib/utils/helpers';
-import type { Transaction } from '$lib/stores/types';
+import type { Transaction } from '$lib/types/types';
 
 export async function handleCountCorrection(
 	message: string,

@@ -15,6 +15,14 @@ export type Category =
 	| 'Expenses'
 	| 'Other / Uncategorized';
 
+export type SplitBillContext = {
+	totalAmount: number;
+	currency: string;
+	originalMessage: string;
+	possibleDate: string;
+	description?: string;
+} | null;
+
 export interface Transaction {
 	id: string;
 	batchId: string;
@@ -22,12 +30,22 @@ export interface Transaction {
 	description: string;
 	type: string;
 	amount: number;
-	currency: string; // <-- ADD THIS LINE (e.g., "USD", "JPY", "EUR")
+	currency: string;
 	category: Category;
 	notes: string;
 	direction: 'in' | 'out' | 'unknown';
+	needs_clarification?: string | null;
 }
-// src/lib/stores/types.ts
+
+export interface ConversationMessage {
+	id: string;
+	role: 'user' | 'assistant' | 'system';
+	content: string;
+	timestamp?: number;
+}
+
+export type UserMood = 'neutral' | 'frustrated' | 'chatty' | 'unknown';
+
 export interface ConversationState {
 	messages: ConversationMessage[];
 	status: string;
@@ -51,20 +69,11 @@ export interface ConversationState {
 			potentialTxnDescriptions: string[];
 		} | null;
 		llmAvailable: boolean;
-
-		// ← Add this line:
 		lastCorrectionTxnId?: string | null;
 		waitingForSplitBillShare?: boolean;
-		splitBillContext?: SplitBillContext; // Use the updated type
+		splitBillContext?: SplitBillContext;
 	};
 }
-export type SplitBillContext = {
-	totalAmount: number;
-	currency: string;
-	originalMessage: string;
-	possibleDate: string;
-	description?: string; // <-- ADD THIS FIELD (make it optional if extraction might fail)
-} | null;
 
 export interface CategoryTotals {
 	[key: string]: number;
@@ -90,15 +99,8 @@ export interface FilterState {
 	sortDirection: SortDirection;
 }
 
-export interface ConversationMessage {
-	id: string; // <-- new, guaranteed unique
-	role: 'user' | 'assistant' | 'system';
-	content: string;
-	timestamp?: number;
-}
-export type UserMood = 'neutral' | 'frustrated' | 'chatty' | 'unknown';
-
 export type ChunkStatus = 'pending' | 'processing' | 'success' | 'error';
+
 export interface ProcessingChunk {
 	id: string;
 	text: string;
@@ -106,6 +108,7 @@ export interface ProcessingChunk {
 	message: string;
 	transactionCount: number;
 }
+
 export interface BulkProcessingState {
 	processingChunks: ProcessingChunk[];
 	processingProgress: number;

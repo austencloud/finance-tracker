@@ -8,7 +8,7 @@ import { get } from 'svelte/store';
 import { appStore } from '$lib/stores/AppStore'; // Import the actual store interface
 import { sendMessage } from '$lib/services/ai/conversation/conversationService';
 import { extractTransactionsFromText } from '$lib/services/ai/extraction/orchestrator';
-import type { Transaction, AppState } from '$lib/stores/types'; // Import types
+import type { Transaction, AppState } from '$lib/types/types'; // Import types
 
 // --- Mock dependencies ---
 vi.mock('$lib/services/ai/deepseek-client', () => {

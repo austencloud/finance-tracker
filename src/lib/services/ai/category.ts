@@ -4,7 +4,7 @@ import { getCategorySuggestionPrompt } from './prompts';
 // --- UPDATED IMPORT ---
 import { llmChat, getLLMFallbackResponse } from './llm-helpers'; // Use abstraction layer
 // --- END UPDATE ---
-import type { Category, Transaction } from '$lib/stores/types';
+import type { Category, Transaction } from '$lib/types/types';
 
 /**
  * Suggests a category for a given transaction using the configured LLM.

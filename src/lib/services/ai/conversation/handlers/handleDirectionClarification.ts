@@ -6,7 +6,7 @@
 // --- Import central store and helpers ---
 import { appStore } from '$lib/stores/AppStore'; // Import central store
 import { get } from 'svelte/store';
-import type { Transaction } from '$lib/stores/types';
+import type { Transaction } from '$lib/types/types';
 import { applyExplicitDirection } from '$lib/utils/helpers';
 // Removed categorizeTransaction import as applyExplicitDirection handles category adjustments internally
 

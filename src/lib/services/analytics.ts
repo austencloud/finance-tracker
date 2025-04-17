@@ -1,6 +1,6 @@
 // ─────────────────────────  analytics.ts  ─────────────────────────
 import { BASE_CURRENCY } from '$lib/config/constants';
-import type { Transaction } from '$lib/stores/types';
+import type { Transaction } from '$lib/types/types';
 import { getAmountInBase } from './conversion';
 // at the top of services/analytics.ts
 export interface FinancialSummary {

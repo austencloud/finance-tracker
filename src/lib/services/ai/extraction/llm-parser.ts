@@ -10,7 +10,7 @@ import {
 	type LLMTransactionExtraction
 } from '$lib/schemas/LLMOutputSchema';
 import { TransactionSchema } from '$lib/schemas/TransactionSchema';
-import type { Transaction } from '$lib/stores/types';
+import type { Transaction } from '$lib/types/types';
 import { extractCleanJson } from '$lib/utils/helpers';
 
 /**

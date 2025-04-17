@@ -2,7 +2,7 @@
 import { get } from 'svelte/store';
 import { v4 as uuidv4 } from 'uuid';
 import { appStore } from '$lib/stores/AppStore';
-import type { Transaction } from '$lib/stores/types';
+import type { Transaction } from '$lib/types/types';
 import { categorizeTransaction } from '$lib/services/categorizer'; // For assigning category
 import { resolveAndFormatDate } from '$lib/utils/date'; // To use today's date if context date was unknown
 

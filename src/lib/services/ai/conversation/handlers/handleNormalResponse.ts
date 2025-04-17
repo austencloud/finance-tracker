@@ -11,7 +11,7 @@ import { get } from 'svelte/store';
 // --- Keep other necessary imports ---
 import { llmChat, getLLMFallbackResponse } from '../../llm-helpers';
 import { getSystemPrompt } from '../../prompts';
-import type { ConversationMessage } from '$lib/stores/types'; // Import type if needed
+import type { ConversationMessage } from '$lib/types/types'; // Import type if needed
 
 /**
  * Handles general conversation using appStore.

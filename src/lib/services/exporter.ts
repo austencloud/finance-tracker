@@ -1,5 +1,5 @@
 // src/lib/services/exporter.ts
-import type { Transaction, Category, CategoryTotals } from '$lib/stores/types'; // Corrected type import path
+import type { Transaction, Category, CategoryTotals } from '$lib/types/types'; // Corrected type import path
 import { downloadFile } from '$lib/utils/helpers';
 
 /**

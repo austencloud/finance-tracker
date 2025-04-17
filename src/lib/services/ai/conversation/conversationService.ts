@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 // App‑wide store
 import { appStore } from '$lib/stores/AppStore';
-import type { Transaction } from '$lib/stores/types';
+import type { Transaction } from '$lib/types/types';
 
 // LLM plumbing
 import { llmChat } from '$lib/services/ai/llm-helpers';
@@ -104,18 +104,17 @@ export async function sendMessage(message: string): Promise<void> {
 	if (BULK_DIRECTION_ALL_OUT_REGEX.test(lower) && message.length < 50)
 		explicitDirectionIntent = 'out';
 
-    const handlers = [
-        handleDirectionClarification,
-        handleSplitBillShareResponse, // <-- ADD NEW HANDLER HERE (High Priority)
-        handleCountCorrection,
-        handleBulkDirectionCorrection,
-        handleFillDetails,
-        handleCorrection,
-        handleExtraction,
-        handleNormalResponse,
-        handleMood
-    ];
-
+	const handlers = [
+		handleDirectionClarification,
+		handleSplitBillShareResponse, // <-- ADD NEW HANDLER HERE (High Priority)
+		handleCountCorrection,
+		handleBulkDirectionCorrection,
+		handleFillDetails,
+		handleCorrection,
+		handleExtraction,
+		handleNormalResponse,
+		handleMood
+	];
 
 	let assistantResponse = '';
 

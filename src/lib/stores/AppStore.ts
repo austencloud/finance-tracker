@@ -21,7 +21,7 @@ import type {
 	ChunkStatus,
 	AnalysisState,
 	SplitBillContext
-} from './types';
+} from '../types/types';
 import { OLLAMA_CONFIG } from '$lib/config/ai-config';
 import { getAmountInBase } from '$lib/services/conversion';
 
@@ -95,9 +95,11 @@ const initialConversationState: ConversationState = {
 		waitingForCorrectionClarification: false,
 		pendingCorrectionDetails: null,
 		llmAvailable: false,
-		waitingForSplitBillShare: false, // Add initial state
-		splitBillContext: null, // Add initial state
-		lastCorrectionTxnId: null // Ensure this was added previously if needed
+		lastCorrectionTxnId: null,
+		// --- Initialize NEW FIELDS ---
+		waitingForSplitBillShare: false,
+		splitBillContext: null
+		// --- END NEW FIELDS ---
 	}
 };
 
@@ -168,14 +170,16 @@ export const appStore = {
 
 	// --- NEW METHODS for Split Bill State ---
 	setWaitingForSplitBillShare(context: SplitBillContext) {
+		// Ensure context is not undefined, default to null if needed, although type expects null
+		const validContext = context || null;
 		appStateStore.update((s) => ({
 			...s,
 			conversation: {
 				...s.conversation,
 				_internal: {
 					...s.conversation._internal,
-					waitingForSplitBillShare: true,
-					splitBillContext: context // Store the whole context object
+					waitingForSplitBillShare: true, // Set flag to true
+					splitBillContext: validContext // Store the context object
 				}
 			}
 		}));
@@ -183,15 +187,16 @@ export const appStore = {
 
 	clearSplitBillWaitState() {
 		appStateStore.update((s) => {
-			if (!s.conversation._internal.waitingForSplitBillShare) return s; // No change if not waiting
+			// Only update if currently waiting, to avoid unnecessary state changes
+			if (!s.conversation._internal.waitingForSplitBillShare) return s;
 			return {
 				...s,
 				conversation: {
 					...s.conversation,
 					_internal: {
 						...s.conversation._internal,
-						waitingForSplitBillShare: false,
-						splitBillContext: null
+						waitingForSplitBillShare: false, // Set flag to false
+						splitBillContext: null // Clear the context
 					}
 				}
 			};

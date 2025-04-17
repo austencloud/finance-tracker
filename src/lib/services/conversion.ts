@@ -1,6 +1,6 @@
 // src/lib/services/conversion.ts
 import { BASE_CURRENCY } from '$lib/config/constants';
-import type { Transaction } from '$lib/stores/types'; // Make sure Transaction type is imported
+import type { Transaction } from '$lib/types/types'; // Make sure Transaction type is imported
 
 // Assume rateCache and API fetching logic for getConversionRate is here...
 const rateCache = new Map<string, { rate: number; timestamp: number }>();

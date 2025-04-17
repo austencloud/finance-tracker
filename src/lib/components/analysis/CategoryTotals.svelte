@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { appStore } from '$lib/stores/AppStore';
-	import type { CategoryTotals } from '$lib/stores/types';
+	import type { CategoryTotals } from '$lib/types/types';
 	import { formatCurrency } from '$lib/utils/helpers'; // Import formatter
 	import { BASE_CURRENCY } from '$lib/config/constants'; // Import base currency
 

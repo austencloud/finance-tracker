@@ -20,7 +20,7 @@ import { appStore } from '$lib/stores/AppStore';
 
 // --- Keep necessary imports ---
 import { isBulkData } from '../conversation-helpers'; // Assuming this is pure utility
-import type { Transaction } from '$lib/stores/types';
+import type { Transaction } from '$lib/types/types';
 
 // --- REMOVE old helper functions ---
 // function updateStatus(...) {}

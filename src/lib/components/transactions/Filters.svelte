@@ -1,7 +1,7 @@
 <script lang="ts">
 	// --- Import appStore directly ---
 	import { appStore } from '$lib/stores/AppStore';
-	import type { Category } from '$lib/stores/types'; // Keep type import
+	import type { Category } from '$lib/types/types'; // Keep type import
 
 	// Helper function for type safety with event target value
 	function handleSearchInput(event: Event) {

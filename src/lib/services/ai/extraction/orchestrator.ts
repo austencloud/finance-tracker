@@ -4,7 +4,7 @@ import { getExtractionPrompt, getOptimizedExtractionPrompt } from '../prompts';
 // Ensure local extractors are imported
 import { enhancedLocalExtraction } from './local-extractors';
 import { parseTransactionsFromLLMResponse } from './llm-parser';
-import type { Transaction } from '$lib/stores/types';
+import type { Transaction } from '$lib/types/types';
 import { v4 as uuidv4 } from 'uuid'; // <-- Import uuid
 import { llmGenerateJson } from '../llm-helpers';
 import { isOllamaAvailable } from '../ollama-client';

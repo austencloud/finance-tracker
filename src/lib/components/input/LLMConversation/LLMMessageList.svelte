@@ -1,7 +1,7 @@
 <script lang="ts">
 	// 1. Import the central store and necessary types
 	import { appStore } from '$lib/stores/AppStore';
-	import type { ConversationMessage } from '$lib/stores/types'; // Assuming type is here
+	import type { ConversationMessage } from '$lib/types/types'; // Assuming type is here
 	import { onMount, onDestroy } from 'svelte';
 	// Removed unused 'get' import
 

@@ -1,6 +1,6 @@
 import { appStore } from '$lib/stores/AppStore';
 import { get } from 'svelte/store';
-import type { Transaction } from '$lib/stores/types';
+import type { Transaction } from '$lib/types/types';
 
 function clearDuplicateConfirmationState(): void {
 	appStore._setConversationInternalState({

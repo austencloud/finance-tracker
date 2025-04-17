@@ -3,7 +3,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { resolveAndFormatDate } from '$lib/utils/date';
 import { categorizeTransaction } from '../../categorizer';
-import type { Transaction } from '$lib/stores/types';
+import type { Transaction } from '$lib/types/types';
 // Add this helper function at the top of the file (after imports)
 /**
  * Processes currency symbols in description and amount

@@ -7,7 +7,7 @@
 	import { isOllamaAvailable } from '$lib/services/ai/ollama-client';
 
 	// Import types
-	import type { Category, Transaction } from '$lib/stores/types';
+	import type { Category, Transaction } from '$lib/types/types';
 
 	// --- Create local derived store for the selected transaction object ---
 	const selectedTransactionObject = derived(appStore, ($appStore) => {

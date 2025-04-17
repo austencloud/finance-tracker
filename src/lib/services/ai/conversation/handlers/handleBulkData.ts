@@ -17,7 +17,7 @@ import { BULK_DATA_THRESHOLD_LENGTH } from '../constants';
 import { llmChunkTransactions } from '../bulk/llmChunkTransactions';
 import { deduplicateTransactions, getCategoryBreakdown } from '../bulk/processing-helpers';
 // Removed unused categorizeTransaction import (appStore.addTransactions likely handles categorization implicitly or it happens in parser)
-import type { Transaction } from '$lib/stores/types';
+import type { Transaction } from '$lib/types/types';
 
 // Helper Functions
 import { parseJsonFromAiResponse, applyExplicitDirection } from '$lib/utils/helpers';

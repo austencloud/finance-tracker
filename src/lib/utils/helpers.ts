@@ -1,5 +1,5 @@
 import { categorizeTransaction } from '$lib/services/categorizer';
-import type { Transaction, Category } from '$lib/stores/types';
+import type { Transaction, Category } from '$lib/types/types';
 
 export function generateTransactionId(): number {
 	return Date.now() + Math.floor(Math.random() * 10000);
