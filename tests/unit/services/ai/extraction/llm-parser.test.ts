@@ -3,7 +3,6 @@ import { describe, it, expect } from 'vitest';
 import { v4 as uuidv4 } from 'uuid'; // Import UUID generator
 import {
 	parseTransactionsFromLLMResponse,
-	fixCommonJsonErrors
 } from '$lib/services/ai/extraction/llm-parser'; // Adjust path if needed
 
 // ... tests for fixCommonJsonErrors ...

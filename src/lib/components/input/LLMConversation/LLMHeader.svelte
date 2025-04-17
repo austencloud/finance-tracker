@@ -64,7 +64,6 @@
 				<span class="copy-success">✓</span>
 			{/if}
 		</button>
-		<ModelSelector />
 	</div>
 </div>
 

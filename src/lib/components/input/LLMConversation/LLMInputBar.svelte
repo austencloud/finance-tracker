@@ -3,8 +3,6 @@
 	import { onDestroy } from 'svelte';
 	import { sendMessage, abortAndClear } from '$lib/services/ai/conversation/conversationService';
 	import { appStore } from '$lib/stores/AppStore';
-
-	// NEW: import our low‑level chat helper and prompt builder
 	import { llmChat, makeSystemMsg, makeUserMsg } from '$lib/services/ai/llm-helpers';
 	import { getSystemPrompt } from '$lib/services/ai/prompts';
 
@@ -15,7 +13,6 @@
 	let showStarterPanel = false;
 	$: isProcessingValue = $appStore.conversation.isProcessing;
 
-	// existing starter templates
 	const starterResponses = [
 		{ label: '💰 Income', text: 'I got paid $1,500 from my job on April 12' },
 		{ label: '💸 Expense', text: 'I spent $42.50 at the grocery store yesterday' },
@@ -69,16 +66,8 @@
 		if (submitTimeoutId) clearTimeout(submitTimeoutId);
 	});
 
-	// ────────────────────────────────────────────────────────────
-	// NEW: scenario selector for example generation
+	// Clever scenario creator
 	let exampleScenario: '' | 'income' | 'expense' | 'transfer' | 'multi' = '';
-	const scenarioOptions = [
-		{ label: 'Random', value: '' },
-		{ label: 'Income', value: 'income' },
-		{ label: 'Expense', value: 'expense' },
-		{ label: 'Transfer', value: 'transfer' },
-		{ label: 'Multiple', value: 'multi' }
-	];
 
 	const scenarioDescriptions: Record<string, string> = {
 		income: 'a salary or other income',
@@ -87,10 +76,13 @@
 		multi: 'multiple transactions in one input'
 	};
 
-	// NEW: generate multiple examples and pick one randomly
 	async function generateExample(level: 1 | 2 | 3) {
 		const today = new Date().toISOString().split('T')[0];
 		const system = getSystemPrompt(today);
+		let scenarioPrompt = '';
+		if (exampleScenario && scenarioDescriptions[exampleScenario]) {
+			scenarioPrompt = `Make it about ${scenarioDescriptions[exampleScenario]}.`;
+		}
 		const prompt = `
 	Generate a single user-style transaction input example at CLARITY LEVEL ${level}.
 	Level 1: extremely simple and direct (e.g. "Paid $20 for lunch.", "Got $100.", "Spent €15.", "Received £200.", "Bought coffee for $4.", "Salary $1500.", "Rent $800.")
@@ -103,6 +95,7 @@
 	Sometimes use slang, abbreviations, or regional expressions. Just output that one line,
 	no explanation. Don't include anything like "Here's a Level 2 transaction input
 	example:", just get straight to the response.
+	${scenarioPrompt}
 `;
 		try {
 			const aiResponse = await llmChat([makeSystemMsg(system), makeUserMsg(prompt)], {
@@ -117,40 +110,36 @@
 			console.error('Failed to generate example:', err);
 		}
 	}
-	// ────────────────────────────────────────────────────────────
 </script>
 
 <div class="input-container">
 	<form on:submit|preventDefault>
-		{#if showStarterPanel}
-			<div class="starter-panel">
-				<button
-					type="button"
-					class="starter-button"
-					on:click={() => generateExample(1)}
-					disabled={isProcessingValue || isSubmitting}
-				>
-					Level 1 Example
-				</button>
-				<button
-					type="button"
-					class="starter-button"
-					on:click={() => generateExample(2)}
-					disabled={isProcessingValue || isSubmitting}
-				>
-					Level 2 Example
-				</button>
-				<button
-					type="button"
-					class="starter-button"
-					on:click={() => generateExample(3)}
-					disabled={isProcessingValue || isSubmitting}
-				>
-					Level 3 Example
-				</button>
-			</div>
-		{/if}
-
+		<div class="starter-panel">
+			<button
+				type="button"
+				class="starter-button"
+				on:click={() => generateExample(1)}
+				disabled={isProcessingValue || isSubmitting}
+			>
+				Level 1 Example
+			</button>
+			<button
+				type="button"
+				class="starter-button"
+				on:click={() => generateExample(2)}
+				disabled={isProcessingValue || isSubmitting}
+			>
+				Level 2 Example
+			</button>
+			<button
+				type="button"
+				class="starter-button"
+				on:click={() => generateExample(3)}
+				disabled={isProcessingValue || isSubmitting}
+			>
+				Level 3 Example
+			</button>
+		</div>
 		<textarea
 			bind:value={userInput}
 			placeholder="Describe transactions or ask questions..."
@@ -166,16 +155,6 @@
 		></textarea>
 
 		<div class="button-container">
-			<button
-				type="button"
-				class="starter-toggle-button"
-				title="Show templates & examples"
-				on:click={toggleStarterPanel}
-				disabled={isProcessingValue || isSubmitting}
-			>
-				{showStarterPanel ? 'Hide Templates' : 'Templates'}
-			</button>
-
 			<button
 				type="button"
 				class="cancel-button"
@@ -261,12 +240,7 @@
 	.starter-button:hover:not(:disabled) {
 		background-color: #2c9e6d;
 	}
-	.starter-toggle-button {
-		background-color: #8e44ad;
-	}
-	.starter-toggle-button:hover:not(:disabled) {
-		background-color: #732d91;
-	}
+
 	/* Existing button styles */
 	button {
 		padding: 8px 15px;

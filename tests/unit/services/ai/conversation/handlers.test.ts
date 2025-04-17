@@ -7,6 +7,7 @@ import { handleExtraction } from '$lib/services/ai/conversation/handlers/handleE
 
 // Import AppStore types
 import type { AppState, Transaction, ConversationMessage, Category } from '$lib/stores/types';
+import { llmChat } from '$lib/services/ai/llm-helpers';
 
 // --- Mock AppStore Correctly ---
 vi.mock('$lib/stores/AppStore', () => {
@@ -49,7 +50,8 @@ vi.mock('$lib/stores/AppStore', () => {
 					lastUserMessageText: '',
 					lastExtractionBatchId: null,
 					waitingForDuplicateConfirmation: false,
-					pendingDuplicateTransactions: []
+					pendingDuplicateTransactions: [],
+					llmAvailable: false
 				}
 			},
 			bulkProcessing: { processingChunks: [], processingProgress: 0, isBulkProcessing: false },
@@ -80,7 +82,12 @@ vi.mock('$lib/stores/AppStore', () => {
 		if (progress !== undefined) mockState.conversation.progress = progress;
 	});
 	const addConversationMessage = vi.fn((role: 'user' | 'assistant', content: string) => {
-		mockState.conversation.messages.push({ role, content, timestamp: Date.now() });
+		return mockState.conversation.messages.push({
+			role,
+			content,
+			timestamp: Date.now(),
+			id: ''
+		});
 	});
 	const _setConversationInternalState = vi.fn(
 		(updates: Partial<AppState['conversation']['_internal']>) => {
@@ -188,7 +195,7 @@ describe('Conversation Handlers', () => {
 			const { parseTransactionsFromLLMResponse } = await import(
 				'$lib/services/ai/extraction/llm-parser'
 			);
-			const { llmChat } = await import('$lib/services/ai/deepseek-client');
+			
 
 			const specificMockParsedTransactions: Transaction[] = [
 				{

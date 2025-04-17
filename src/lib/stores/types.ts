@@ -26,6 +26,7 @@ export interface Transaction {
 	notes: string;
 	direction: 'in' | 'out' | 'unknown';
 }
+// src/lib/stores/types.ts
 export interface ConversationState {
 	messages: ConversationMessage[];
 	status: string;
@@ -41,7 +42,6 @@ export interface ConversationState {
 		waitingForDuplicateConfirmation?: boolean;
 		pendingDuplicateTransactions?: Transaction[];
 		waitingForCorrectionClarification?: boolean;
-
 		pendingCorrectionDetails?: {
 			originalMessage: string;
 			parsedField: 'amount' | 'date' | 'description' | 'category' | 'type' | 'notes';
@@ -49,10 +49,13 @@ export interface ConversationState {
 			potentialTxnIds: string[];
 			potentialTxnDescriptions: string[];
 		} | null;
-
 		llmAvailable: boolean;
+
+		// ← Add this line:
+		lastCorrectionTxnId?: string | null;
 	};
 }
+
 export interface CategoryTotals {
 	[key: string]: number;
 }

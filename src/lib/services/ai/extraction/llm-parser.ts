@@ -11,7 +11,7 @@ import {
 } from '$lib/schemas/LLMOutputSchema';
 import { TransactionSchema } from '$lib/schemas/TransactionSchema';
 import type { Transaction } from '$lib/stores/types';
-import { extractCleanJson } from '../parsers/fixJson';
+import { extractCleanJson } from '$lib/utils/helpers';
 
 /**
  * Parses LLM JSON output into an array of Transaction objects.
@@ -22,69 +22,44 @@ import { extractCleanJson } from '../parsers/fixJson';
  * @param originalText Optional: the user input text, used to override the amount if needed.
  * @returns Array of validated Transaction objects.
  */
-export function parseTransactionsFromLLMResponse(
-	jsonString: string,
-	batchId: string,
-	originalText: string = ''
-): Transaction[] {
-	console.log(`[LLM Parser] Parsing JSON for batch ${batchId}...`);
-	if (!jsonString || typeof jsonString !== 'string' || !jsonString.trim()) {
-		console.warn('[LLM Parser] Empty or invalid JSON string.');
-		return [];
+export function parseTransactionsFromLLMResponse(raw: string, batchId: string): Transaction[] {
+	// 1) try to strip markdown fences
+	let jsonText = raw.trim().replace(/^```json\s*|\s*```$/gi, '');
+
+	// 2) feed through our cleaner
+	const cleaned = extractCleanJson(jsonText);
+	if (cleaned) {
+		jsonText = cleaned;
 	}
 
-	// Strip any leading non-JSON characters
-	const firstChar = jsonString.search(/[\{\[]/);
-	if (firstChar < 0) {
-		console.warn('[LLM Parser] No JSON object/array found.');
-		return [];
-	}
-	let jsonCandidate = jsonString.slice(firstChar).trim();
-
-	// Attempt to parse JSON, with fallback to cleaning utility
-	let parsed: unknown;
+	// 3) final parse
+	let parsed: any;
 	try {
-		parsed = JSON.parse(jsonCandidate);
-	} catch (e) {
-		console.warn('[LLM Parser] Initial JSON parse failed. Attempting to fix...');
-		const cleaned = extractCleanJson(jsonCandidate);
-		if (!cleaned) {
-			console.error('[LLM Parser] JSON cleaning failed.');
-			return [];
-		}
-		try {
-			parsed = JSON.parse(cleaned);
-			console.log('[LLM Parser] JSON parsed after cleaning.');
-		} catch (err) {
-			console.error('[LLM Parser] Failed to parse JSON after cleaning:', err);
-			return [];
-		}
+		parsed = JSON.parse(jsonText);
+	} catch (err) {
+		console.error('[LLM Parser] JSON parse failed even after cleaning:', err, '\nRaw was:', raw);
+		return [];
 	}
 
-	// Validate against response schema or raw array schema
-	let rawList: LLMTransactionExtraction[];
-	const parsedResp = LLMTransactionResponseSchema.safeParse(parsed);
-	if (parsedResp.success) {
-		rawList = parsedResp.data.transactions;
-		console.log(`[LLM Parser] Validated response schema with ${rawList.length} transactions.`);
-	} else {
-		const arrVal = z.array(LLMTransactionExtractionSchema).safeParse(parsed);
-		if (!arrVal.success) {
-			console.error('[LLM Parser] Validation failed:', parsedResp.error.flatten());
-			return [];
-		}
-		rawList = arrVal.data;
-		console.log(`[LLM Parser] Parsed direct array with ${rawList.length} transactions.`);
-	}
+	// 4) ensure it’s an array of objects
+	const arr: any[] = Array.isArray(parsed)
+		? parsed
+		: parsed.transactions instanceof Array
+			? parsed.transactions
+			: [];
 
-	// Extract first numeric amount from originalText, if present
-	const amtMatch = /\$?\s*(\d+(?:\.\d+)?)/.exec(originalText);
-	const overrideAmt = amtMatch ? parseFloat(amtMatch[1]) : null;
-	if (overrideAmt !== null) {
-		console.log(`[LLM Parser] Detected override amount ${overrideAmt} from input text.`);
-	}
-
-	return convertLLMDataToTransactions(rawList, batchId, overrideAmt);
+	// 5) map into Transaction with IDs and batchId
+	return arr.map((o) => ({
+		id: o.id || uuidv4(),
+		batchId,
+		date: o.date ?? 'unknown',
+		description: o.description ?? 'unknown',
+		type: o.type ?? 'unknown',
+		amount: typeof o.amount === 'number' ? o.amount : parseFloat(o.amount) || 0,
+		category: o.category ?? 'Other / Uncategorized',
+		notes: o.details ?? '',
+		direction: o.direction ?? 'unknown'
+	}));
 }
 
 /**

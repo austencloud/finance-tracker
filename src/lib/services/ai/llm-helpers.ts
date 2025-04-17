@@ -19,6 +19,7 @@ import {
 
 import { OLLAMA_CONFIG, OLLAMA_MODELS } from '$lib/config/ai-config';
 import { logDebug } from '$lib/config/log';
+import { getSystemPrompt } from './prompts';
 
 /* ------------------------------------------------------------------ */
 /*  Simple heuristics & helpers                                       */
@@ -108,23 +109,28 @@ export async function llmChat(
 		rawUserText?: string;
 	} = {}
 ): Promise<string> {
-	// pick based on last user snippet
 	const sample =
 		opts.rawUserText ?? [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
 	const model = pickModel(sample, opts);
 	setOllamaModel(model);
-	return (
-		(await ollamaChat(
-			messages,
-			{ temperature: opts.temperature ?? 0.7 },
-			opts.requestJsonFormat ?? false
-		)) || ''
+	const raw = await ollamaChat(
+		messages,
+		{ temperature: opts.temperature ?? 0.7 },
+		opts.requestJsonFormat ?? false
 	);
+	const reply = raw ?? '';
+	const cleaned = reply
+		.replace(/<think>[\s\S]*?<\/think>/gi, '')
+		.replace(/^<think>.*$/gmi, '')
+		.trim();
+	return cleaned;
 }
 
 /**
  * Two‑pass JSON generator: try simple model + verify, then fallback heavy
  */
+
+
 export async function llmGenerateJson(
 	messages: ChatMessage[],
 	opts: {
@@ -134,18 +140,20 @@ export async function llmGenerateJson(
 		rawUserText?: string;
 	} = {}
 ): Promise<string> {
+	const today = new Date().toISOString().split('T')[0];
+	const system = getSystemPrompt(today);
+	const full = [makeSystemMsg(system), ...messages];
+
 	// first pass: simple model
 	const sample =
 		opts.rawUserText ?? [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
 	let first: string | null = null;
 	try {
-		// force simple if small request
 		const simpleModel = pickModel(sample, { forceSimple: opts.forceSimple });
 		setOllamaModel(simpleModel);
-		first = await ollamaChat(messages, { temperature: opts.temperature ?? 0.1 }, true);
+		first = await ollamaChat(full, { temperature: opts.temperature ?? 0.1 }, true);
 		if (first && isValidJson(first)) {
-			// quick verify
-			const verify = await ollamaChat(messages, { temperature: opts.temperature ?? 0.1 }, true);
+			const verify = await ollamaChat(full, { temperature: opts.temperature ?? 0.1 }, true);
 			if (verify && isValidJson(verify)) {
 				return first;
 			}
@@ -157,7 +165,7 @@ export async function llmGenerateJson(
 	// fallback: heavy model
 	try {
 		setOllamaModel(OLLAMA_MODELS.LARGE);
-		let heavy = await ollamaChat(messages, { temperature: opts.temperature ?? 0.1 }, true);
+		let heavy = await ollamaChat(full, { temperature: opts.temperature ?? 0.1 }, true);
 		heavy = stripThinkTags(heavy);
 		return heavy;
 	} catch (err) {

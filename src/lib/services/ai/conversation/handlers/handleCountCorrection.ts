@@ -1,13 +1,12 @@
 import { get } from 'svelte/store';
+import { v4 as uuidv4 } from 'uuid';
 import { appStore } from '$lib/stores/AppStore';
 
 import { getLLMFallbackResponse, llmChat } from '../../llm-helpers';
-import { getSystemPrompt } from '../../prompts';
-
+import { getSystemPrompt, getExtractionPrompt } from '../../prompts';
 import { parseTransactionsFromLLMResponse } from '../../extraction/llm-parser';
 import { applyExplicitDirection } from '$lib/utils/helpers';
 import type { Transaction } from '$lib/stores/types';
-import { v4 as uuidv4 } from 'uuid';
 
 export async function handleCountCorrection(
 	message: string,
@@ -24,101 +23,85 @@ export async function handleCountCorrection(
 		'less than that',
 		'wrong number'
 	];
-	const containsCountKeyword = countKeywords.some((keyword) => lowerMessage.includes(keyword));
+	const containsCountKeyword = countKeywords.some((k) => lowerMessage.includes(k));
 	const containsNumber = /\d+/.test(lowerMessage);
 
-	const conversationInternalState = get(appStore).conversation._internal;
-	const originalText = conversationInternalState.lastUserMessageText;
-	const lastBatchId = conversationInternalState.lastExtractionBatchId;
+	const internal = get(appStore).conversation._internal;
+	const originalText = internal.lastUserMessageText;
+	const lastBatchId = internal.lastExtractionBatchId;
 
-	const hasContextForCorrection = !!originalText && !!lastBatchId;
-
-	if (!containsCountKeyword || !containsNumber || !hasContextForCorrection) {
+	if (!containsCountKeyword || !containsNumber || !originalText || !lastBatchId) {
 		return { handled: false };
 	}
 
-	const currentMainTransactions = get(appStore).transactions;
-	const previousBatchTransactions = currentMainTransactions.filter(
-		(t) => t.batchId === lastBatchId
-	);
-	const previousTransactionCount = previousBatchTransactions.length;
-
-	console.log(
-		`[CountCorrectionHandler] Detected count correction for batch ${lastBatchId}. Original text present. Previous count (estimated): ${previousTransactionCount}`
-	);
-	appStore.setConversationStatus('Re-evaluating extraction...', 30);
+	appStore.setConversationStatus('Re‑evaluating extraction...', 30);
 
 	try {
 		const correctionHint = message;
+		const today = new Date().toISOString().slice(0, 10);
 
-		const reExtractionPrompt = `
-            The user previously provided the following text for transaction extraction:
-            """
-            ${originalText}
-            """
-            My previous attempt might have extracted an incorrect number of transactions (estimated ${previousTransactionCount} found).
-            The user has now provided the following correction regarding the count:
-            """
-            ${correctionHint}
-            """
-            Please re-analyze the original text carefully, paying close attention to the user's correction about the number of transactions. Extract the transactions again based on this new information. Ensure you capture the correct number of items. Format the output as a JSON object containing a "transactions" array, where each element follows the Transaction schema (date, description, details, type, amount, direction).
-            JSON Object:
-        `;
+		// Build a combined text for re‑extraction
+		const combinedText = `
+      Original user input:
+      """
+      ${originalText}
+      """
+      Correction about count:
+      """
+      ${correctionHint}
+      """
+    `.trim();
 
-		const today = new Date().toISOString().split('T')[0];
+		// Use the same extraction prompt but feed in combinedText
+		const extractionPrompt = getExtractionPrompt(combinedText, today);
+
 		const messages = [
 			{ role: 'system' as const, content: getSystemPrompt(today) },
-			{ role: 'user' as const, content: reExtractionPrompt }
+			{ role: 'user' as const, content: extractionPrompt }
 		];
 
-		const aiResponse = await llmChat(messages, { temperature: 0.2, rawUserText: message });
+		// Request JSON‑only output
+		const aiResponse = await llmChat(messages, {
+			temperature: 0.2,
+			rawUserText: message,
+			requestJsonFormat: true
+		});
 
-		const newCorrectionBatchId = uuidv4();
+		const newBatchId = uuidv4();
+		const parsed = parseTransactionsFromLLMResponse(aiResponse, newBatchId);
 
-		const parsedTransactions = parseTransactionsFromLLMResponse(aiResponse, newCorrectionBatchId);
-
-		if (!Array.isArray(parsedTransactions)) {
-			console.warn(
-				'[CountCorrectionHandler] Failed to parse valid transaction array from AI after correction attempt.'
-			);
-			throw new Error('AI did not return valid JSON data after correction.');
-		}
-
-		if (parsedTransactions.length === 0) {
-			console.log('[CountCorrectionHandler] AI returned empty array after correction attempt.');
-			appStore._setConversationInternalState({
-				lastUserMessageText: '',
-				lastExtractionBatchId: null
-			});
+		if (!Array.isArray(parsed) || parsed.length === 0) {
 			throw new Error('AI did not find any transactions after correction.');
 		}
 
-		let finalTransactions = applyExplicitDirection(parsedTransactions, explicitDirectionIntent).map(
-			(txn) => ({
-				...txn,
+		// Apply explicit in/out override if needed
+		const corrected = applyExplicitDirection(parsed, explicitDirectionIntent).map((txn) => ({
+			...txn,
+			batchId: newBatchId
+		}));
 
-				batchId: newCorrectionBatchId
-			})
-		);
+		appStore.addTransactions(corrected);
 
-		appStore.addTransactions(finalTransactions);
-
-		const response = `Okay, I've re-analyzed the text based on your correction. I've added ${finalTransactions.length} transaction(s) based on that. Please check the list.`;
 		appStore.setConversationStatus('Extraction updated', 100);
+		appStore._setConversationInternalState({
+			lastUserMessageText: '',
+			lastExtractionBatchId: null
+		});
 
-		appStore._setConversationInternalState({
-			lastUserMessageText: '',
-			lastExtractionBatchId: null
-		});
-		return { handled: true, response: response };
-	} catch (error) {
-		console.error('[CountCorrectionHandler] Error during re-extraction:', error);
+		return {
+			handled: true,
+			response: `Okay, I've re‑analyzed and added ${corrected.length} transaction(s) based on your correction.`
+		};
+	} catch (err) {
+		console.error('[CountCorrectionHandler] Error during re‑extraction:', err);
 		appStore.setConversationStatus('Error during correction');
-		const errorMsg = getLLMFallbackResponse(error instanceof Error ? error : undefined);
 		appStore._setConversationInternalState({
 			lastUserMessageText: '',
 			lastExtractionBatchId: null
 		});
-		return { handled: true, response: errorMsg };
+		return {
+			handled: true,
+			response: getLLMFallbackResponse(err instanceof Error ? err : undefined)
+		};
 	}
 }

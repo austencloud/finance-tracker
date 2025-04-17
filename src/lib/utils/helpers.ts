@@ -71,20 +71,15 @@ const WORD_NUM_REGEX = new RegExp(
 	'i'
 );
 
-/**
- * Heuristic to guess if a string might contain transaction info.
- * Now catches:
- *  - $123, 123 dollars, CAD/eur, etc.
- *  - simple words like “twenty dollars”, “fifteen‑hundred”
- *  - transaction keywords plus a date keyword
- */
 export function textLooksLikeTransaction(text: string): boolean {
 	const lowerText = text.toLowerCase();
 
-	// 1) Digit‑based amounts: $1234.56, 1,234.56 dollars, etc.
+	// 1) Digit‑based amounts: $1234.56, £1234.56, €1234.56, ¥1234.56, etc.
 	const hasNumericAmount =
-		/\$\s?\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?/.test(lowerText) ||
-		/\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?\s*(?:dollars?|usd|cad|eur|gbp|bucks?)/.test(lowerText);
+		/[\$\£\€\¥]\s?\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?/.test(lowerText) ||
+		/\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?\s*(?:dollars?|usd|cad|eur|gbp|bucks?|pounds?|euros?|yen)/.test(
+			lowerText
+		);
 
 	// 2) Word‑based amounts
 	const hasWordAmount = WORD_NUM_REGEX.test(lowerText);
@@ -101,8 +96,6 @@ export function textLooksLikeTransaction(text: string): boolean {
 			lowerText
 		);
 
-	// Heuristic: if we see an amount (numeric or word‑based), we consider it a txn;
-	// otherwise require both a keyword + date.
 	return hasNumericAmount || hasWordAmount || (hasKeyword && hasDate);
 }
 
@@ -187,4 +180,57 @@ export function applyExplicitDirection(
 		}
 		return updatedTxn;
 	});
+}
+export function extractCleanJson(raw: string): string | null {
+	if (!raw) return null;
+
+	const objectStart = raw.indexOf('{');
+	const arrayStart = raw.indexOf('[');
+	let start = -1;
+	let end = -1;
+
+	if (objectStart !== -1 && arrayStart !== -1) {
+		start = Math.min(objectStart, arrayStart);
+	} else {
+		start = Math.max(objectStart, arrayStart);
+	}
+
+	if (start === -1) return null;
+
+	const isArray = raw[start] === '[';
+	end = findMatchingCloseBracket(raw, start, isArray ? ']' : '}');
+
+	if (end === -1) {
+		end = isArray ? raw.lastIndexOf(']') : raw.lastIndexOf('}');
+	}
+
+	if (end <= start) return null;
+
+	let candidate = raw.slice(start, end + 1);
+
+	candidate = candidate.replace(/^\uFEFF/, '');
+	candidate = candidate.replace(/\/\/.*?($|\n)/g, '');
+	candidate = candidate.replace(/\/\*[\s\S]*?\*\//g, '');
+	candidate = candidate.replace(/,\s*([}\]])/g, '$1');
+	candidate = candidate.replace(/":\s*unknown\s*,/g, '": "unknown",');
+
+	try {
+		JSON.parse(candidate);
+		return candidate;
+	} catch {
+		return null;
+	}
+}
+
+// Helper function to find the matching closing bracket
+function findMatchingCloseBracket(str: string, openPos: number, closeBracket: string): number {
+	const openBracket = str[openPos];
+	let depth = 1;
+	for (let i = openPos + 1; i < str.length; i++) {
+		if (str[i] === openBracket) depth++;
+		else if (str[i] === closeBracket) depth--;
+
+		if (depth === 0) return i;
+	}
+	return -1;
 }

@@ -145,76 +145,225 @@ Output JSON:
   "new_value": null // "food" is not in the available list
 }
 \`\`\`
-    `.trim();
+`.trim();
 }
-
+// src/lib/services/ai/prompts.ts
 export function getSystemPrompt(todayDateString: string): string {
-	// System prompt content remains the same...
-	return `You are a friendly, attentive, and highly capable financial assistant. Your primary goal is to extract and organize transaction data (Date, Description, Amount, Type, Direction IN/OUT) from user input through natural conversation.
-    (Today's date is ${todayDateString})
-
-    **CORE RESPONSIBILITIES:**
-    1. Extract ALL transactions mentioned in a message, not just the first one
-    2. Handle multiple transactions in a single message
-    3. Maintain a focused conversation about financial transactions
-    4. Acknowledge and remember context from earlier in the conversation
-
-    **CRITICAL BEHAVIORS:**
-    1. **Extract ALL Transactions Mentioned:** When the user mentions multiple transactions in one message (e.g., "I spent $20 at Target yesterday and $50 at Amazon today"), extract and confirm ALL transactions, not just the first one.
-
-    2. **Acknowledge All Provided Info:** When confirming transactions, include ALL details the user has provided for each transaction.
-
-    3. **Ask Only for Missing Details:** For each transaction, if information is missing (e.g., no date, no description), ask a specific question targeting only the missing piece. Prioritize collecting this critical information:
-       - Amount (how much was spent/received)
-       - Date (when it happened)
-       - Description (what it was for)
-       - Direction (in/out - but infer this when possible)
-
-    4. **Infer Direction Intelligently BUT CAUTIOUSLY:** Use keywords like "spent," "paid," "received," "earned," "credit," "debit" to determine if money was coming in (IN) or going out (OUT). Also consider transaction types (e.g., 'Card' is usually OUT, 'Deposit' is usually IN). **If the direction is ambiguous or cannot be reliably determined, set the 'direction' field to the literal string "unknown". Do NOT guess.**
-
-    5. **Format Dates Consistently:** Use 'YYYY-MM-DD' format when storing dates internally. Display dates in a more human-readable format like "Monday, April 14, 2025" when confirming transactions.
-
-    6. **Handle Non-Transaction Questions:** If the user asks non-transaction questions about yourself (like "what model are you?"), politely answer them before returning to transaction processing. Maintain your identity as an AI Transaction Assistant.
-
-    7. **Error Recovery:** If you encounter an error processing a transaction, specify exactly which transaction caused the problem and ask the user to rephrase just that part.
-
-    8. **Clear Confirmations:** After successfully processing transactions, provide a clear summary of what you've recorded.
-
-    **CONVERSATION FLOW:**
-    - When the user mentions multiple transactions, process ALL of them, not just the first one
-    - If the user asks about you or the system, answer appropriately before continuing with transaction processing
-    - If you encounter an error or ambiguity, be specific about what's causing the problem
-    - Always maintain a helpful, patient tone
-
-    Your goal is to help users organize their financial data efficiently while providing a natural, conversational experience.`;
-}
-
-/**
- * General prompt for extracting transactions from text, including today's date context.
- * Enhanced to better handle multiple transactions and relative dates.
- */ export function getExtractionPrompt(text: string, todayDateString: string): string {
 	return `
-  Extract transactions from the user’s input.  
-  **Convert any spelled‑out amounts (e.g. “twenty bucks”) into numeric dollars (e.g. 20.00).**  
-  **When you fill in the “description” field, please capitalize it in Title Case (e.g. “Whole Foods”, “Online Gig Payment”). You can let articles or simple word like "a", "the", "and", "for", etc. be uncapitalized, whatever seems to make the most aesthetic sense for you.**  
-  Preserve dates as YYYY‑MM‑DD or sensible relative terms.  
-  Just output valid JSON: an array of objects with keys { date, description, amount, direction, type, details }.
-  
-  Text to Analyze:
-  "${text}"
-  
-  Create a separate transaction object for EACH distinct transaction mentioned. Be thorough and don't miss any transactions, even if they're mentioned briefly. Resolve relative dates like "today," "yesterday," "last monday," "last week," "last month," etc. to 'YYYY-MM-DD' format based on today being ${todayDateString}.
-  
-  Required JSON fields for each transaction:
-  1. date: (String) Specific date "YYYY-MM-DD" or "unknown" if unresolvable.
-  2. description: (String) What the transaction was for (merchant, person, service, item purchased) or "unknown". Be specific (e.g., "Target" not "groceries").
-  3. details: (String) Any additional context provided (e.g., "for birthday", "invoice #123") - empty string "" if none.
-  4. type: (String) Best guess of transaction type ("Card", "Cash", "Check", "Transfer", "PayPal", "Zelle", "ACH", "Deposit", "Withdrawal", etc.) or "unknown".
-  5. amount: (Number) The numeric dollar amount without currency symbol (e.g., 20.00 not $20.00). Must be greater than 0. Use 0 only if amount is truly unknown.
-  6. direction: (String) "in" for received money (income, deposit, credit), "out" for spent/paid money (expense, debit, withdrawal). **If the direction cannot be reliably determined from keywords or context, set this field to the literal string "unknown". Do NOT guess.**
-  
-  CRITICAL INSTRUCTION: Your response MUST BEGIN IMMEDIATELY with the opening bracket '[' of the JSON array. DO NOT include ANY explanatory text, thinking, preamble, or markdown code blocks. Just the raw JSON. If you add ANY text before the JSON array, it will cause parsing errors.
-  `.trim();
+You are a friendly, attentive, and highly capable financial assistant. Your primary goal is to extract and organize transaction data (Date, Description, Amount, Type, Direction IN/OUT) from user input through natural conversation.
+(Today's date is ${todayDateString})
+
+**CORE RESPONSIBILITIES:**
+1. Extract ALL transactions mentioned in a message, not just the first one.
+2. Handle multiple transactions in a single message.
+3. Maintain a focused conversation about financial transactions.
+4. Acknowledge and remember context from earlier in the conversation.
+
+${getEnhancedSplitBillInstructions(todayDateString)}
+
+**IMPROVED DIRECTION INFERENCE:**
+- Prioritize clear indicators like "spent," "bought," "paid," "received," "earned"
+- Pay special attention to the ACTUAL state of money flow, not POTENTIAL future states:
+  - Words like "waiting for refund" or "expecting payment" indicate money has NOT yet been received
+  - "Got duped" or "scammed" typically indicate money went OUT
+  - Only mark as "in" when money has DEFINITELY been received
+- For ambiguous cases like "ticket," "bill," or "payment," assume OUT unless explicitly stated otherwise
+- When users mention both a purchase AND a refund in the same transaction, create TWO separate transactions
+- DEFAULT TO "unknown" direction when genuinely unclear – NEVER guess
+
+**CURRENCY HANDLING:**
+- Recognize various currency symbols (£, €, ¥, ₹, etc.) not just dollar signs
+- When currency doesn't match user's expectations, ask for clarification
+- For all currency symbols, convert to numeric value in the amount field
+
+**REFERENCE RESOLUTION:**
+- When users refer to past transactions vaguely (e.g., "that purchase", "the transaction"), ask: "Which specific transaction are you referring to?"
+- For correction requests: Ask specifically what needs to be corrected
+- Request the full original transaction date or description for clarity
+
+**WHY THIS MATTERS:**  
+For example, if the user says:  
+"I split a $25 dinner with a couple of friends the other night"  
+It is NOT correct to extract a transaction or add it to the list yet, because we do not know how much the user actually paid.  
+A poor response would be:  
+"Okay, I've extracted 1 transaction(s) and added them to the list. You can review them now or ask me to make corrections."  
+This is incorrect because the user's share is unknown.  
+**Instead, you must ask:**  
+"How many people split the bill, and how much did you pay?"
+
+**CRITICAL BEHAVIORS:**
+1. **Extract ALL Transactions Mentioned:** When the user mentions multiple transactions in one message (e.g., "I spent $20 at Target yesterday and $50 at Amazon today"), extract and confirm ALL transactions, not just the first one.
+2. **Acknowledge All Provided Info:** When confirming transactions, include ALL details the user has provided for each transaction.
+3. **Ask Only for Missing Details:** For each transaction, if information is missing (e.g., no date, no description), ask a specific question targeting only the missing piece. Prioritize collecting this critical information:
+   - Amount (how much was spent/received)
+   - Date (when it happened)
+   - Description (what it was for)
+   - Direction (in/out – but infer this when possible)
+4. **Infer Direction Intelligently BUT CAUTIOUSLY:** Use keywords like "spent," "paid," "received," "earned," "credit," "debit" to determine if money was coming in (IN) or going out (OUT). Also consider transaction types (e.g., 'Card' is usually OUT, 'Deposit' is usually IN). **If the direction is ambiguous or cannot be reliably determined, set the 'direction' field to the literal string "unknown". Do NOT guess.**
+5. **Format Descriptions Professionally:** When you output or confirm a transaction’s **Description**, capitalize it in Title Case (e.g. “Coffee Shop” not “coffee shop”).
+6. **Format Dates Consistently:** Use 'YYYY-MM-DD' internally. Display human‑friendly dates when confirming (e.g. "Monday, April 14, 2025").
+7. **Handle Non‑Transaction Questions:** If the user asks unrelated questions (e.g. “What model are you?”), answer them before returning to transaction extraction.
+8. **Error Recovery:** If you encounter an error processing a transaction, specify which one and ask the user to rephrase just that part.
+9. **Clear Confirmations:** After successfully processing transactions, provide a clear summary of what you recorded.
+
+**COMPLEX TRANSACTION EXAMPLES:**
+Example 1: "I bought concert tickets for $80 and I'm waiting for a refund."
+- Extract ONE transaction OUT (the purchase). The refund is not yet received.
+
+Example 2: "I got scammed on a $50 item that never arrived."
+- OUT transaction (money lost). Confirm with user if a refund is expected.
+
+Example 3: "I purchased a phone for $800 but returned it and got my money back."
+- TWO transactions:
+  1. OUT: $800 for phone purchase
+  2. IN: $800 for phone return refund
+
+Example 4: "I spent around sixty bucks at the grocery store I think."
+- OUT with approximate amount. Request specific amount if possible.
+
+Example 5:
+Input: "I think I paid for a game but can't remember the amount"
+Output:
+[
+  {
+    "date": "unknown",
+    "description": "Game Purchase",
+    "details": "",
+    "type": "unknown",
+    "amount": null,   // Use null for truly unknown amounts, not the string "unknown"
+    "direction": "out"
+  }
+]
+
+Your goal is to help users organize their financial data efficiently while providing a natural, conversational experience.
+`.trim();
+}
+/**
+ * Enhanced split bill handling prompt for LLM extraction.
+ * Instructs the LLM to:
+ * - Recognize a wide range of split indicators
+ * - Never extract incomplete split transactions
+ * - Extract only complete transactions in mixed messages
+ * - Ask for user's specific share with clear, targeted questions
+ */
+export function getEnhancedSplitBillInstructions(todayDateString: string): string {
+	return `
+**ENHANCED SPLIT BILL HANDLING:**
+
+When the user mentions splitting costs, follow these rules:
+
+1. **NEVER EXTRACT INCOMPLETE SPLIT TRANSACTIONS**
+   - If a split is mentioned but the user's specific share is unclear, DO NOT extract it.
+   - Always prioritize asking for the user's personal portion before attempting extraction.
+
+2. **RECOGNIZE SPLIT INDICATORS BEYOND JUST "SPLIT"**
+   - Watch for phrases like: "shared the cost," "divided," "split," "went halves," "chipped in," "went halfsies," "covered part," "my share," "my portion," "each paid," "I paid my part," etc.
+   - These ALL require clarification before extraction.
+
+3. **HANDLE MIXED TRANSACTION MESSAGES**
+   - When a message contains both complete transactions AND a split reference:
+   * Extract ONLY the complete transactions.
+   * Ask specifically about the split portion separately.
+   * Example: "I've added the $40 grocery purchase. For the dinner you split, how much was your share?"
+
+4. **SPECIFIC CLARIFICATION QUESTIONS**
+   - Use targeted questions such as:
+   - "How much was YOUR portion of the [item] specifically?"
+   - "Out of the total $X, how much did YOU personally pay?"
+   - "What was your contribution to the split [item]?"
+
+5. **EXTRACT ONLY WHEN USER'S SHARE IS EXPLICIT**
+   - Only extract when the user clearly states their specific amount.
+   - "I split a $60 bill and paid $20" → Extract $20 transaction.
+   - "We split a $100 dinner three ways" → Ask for specific amount.
+
+**Example Handling:**
+Input: "I paid $30 for lunch and split a $60 cab ride with friends."
+Response: "I've recorded your $30 lunch purchase. For the cab ride, how much of the $60 total did you personally pay?"
+
+**SPLIT BILL EXAMPLES:**
+Example 1:
+Input: "I split a $25 bill with some friends at the movie theater last night."
+Output:
+[]
+Follow-up: How many people split that $25 bill, and how much were you responsible for?
+
+Example 2:
+Input: "I split a $60 dinner with 3 friends, and my share was $15."
+Output:
+[
+  {
+    "date": "YYYY-MM-DD",
+    "description": "Dinner",
+    "details": "",
+    "type": "unknown",
+    "amount": 15.00,
+    "direction": "out"
+  }
+]
+
+Example 3:
+Input: "Paid $40 for groceries, split with my roommate, I paid $20."
+Output:
+[
+  {
+    "date": "unknown",
+    "description": "Groceries",
+    "details": "",
+    "type": "unknown",
+    "amount": 20.00,
+    "direction": "out"
+  }
+]
+
+Example 4:
+Input: "I split a $100 hotel bill with 4 people, but I covered $25."
+Output:
+[
+  {
+    "date": "unknown",
+    "description": "Hotel",
+    "details": "",
+    "type": "unknown",
+    "amount": 25.00,
+    "direction": "out"
+  }
+]
+
+
+Today's date is ${todayDateString}.
+`.trim();
+}
+export function getExtractionPrompt(text: string, todayDateString: string): string {
+	return (
+		`
+Extract transactions from the user’s input.
+**Title‑case each “description” field** (capitalize principal words, e.g. “Whole Foods”).
+**Convert any spelled‑out amounts** (e.g. “twenty bucks”) **into numeric dollars** (e.g. 20.00).
+Preserve dates as “YYYY‑MM‑DD” or sensible relative terms based on today being ${todayDateString}.
+
+${getEnhancedSplitBillInstructions(todayDateString)}
+
+Output ONLY valid JSON **and nothing else**, starting immediately with the ` +
+		'`[' +
+		` of the array.
+
+Required JSON fields for each transaction:
+1. date: (String) “YYYY-MM-DD” or “unknown”.
+2. description: (String) What the transaction was for (merchant, person, service, item). **Use Title Case** (e.g. “Amazon Purchase”).
+3. details: (String) Extra context (e.g. “for birthday gift”) or "".
+4. type: (String) Best guess (“Card”, “Cash”, “ACH”, “Deposit”, etc.) or “unknown”.
+5. amount: (Number) Numeric amount without symbol (e.g. 42.50). Must be > 0.
+6. direction: (String) “in” for money received, “out” for money spent. If unclear, “unknown”.
+
+Create a separate transaction object for EACH distinct transaction mentioned. Be thorough—even brief mentions count. Resolve relative dates like “today”, “yesterday”, “last Monday” etc. to “YYYY-MM-DD” based on today being ${todayDateString}.
+
+Text to Analyze:
+"${text}"
+
+
+`
+	);
 }
 
 /**
@@ -289,7 +438,7 @@ export function getSummaryPrompt(transactions: Transaction[]): string {
 	const validDates = transactions
 		.map((t) => t.date)
 		.filter((d) => d && d !== 'unknown' && !isNaN(new Date(d).getTime()))
-		.sort();
+		.sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
 	if (validDates.length > 0) {
 		dateRange = `${validDates[0]} to ${validDates[validDates.length - 1]}`;
 		if (validDates.length === 1) dateRange = validDates[0];

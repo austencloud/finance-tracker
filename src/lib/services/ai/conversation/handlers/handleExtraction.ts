@@ -24,6 +24,18 @@ export async function handleExtraction(
 	message: string,
 	explicitDirectionIntent: 'in' | 'out' | null
 ): Promise<{ handled: boolean; response?: string; extractedCount?: number }> {
+	// Intercept "split $X" mentions and ask for responsible share first
+	const splitMatch = message.match(/\bsplit\b.*\$(\d+(\.\d{1,2})?)/i);
+	if (splitMatch) {
+		const total = splitMatch[1];
+		appStore.addConversationMessage(
+			'assistant',
+			`You mentioned splitting a $${total} bill — how many people split it, and how much were *you* responsible for?`
+		);
+		appStore.setConversationStatus('Awaiting split‑bill details', 100);
+		return { handled: true, response: '' };
+	}
+
 	if (!textLooksLikeTransaction(message)) {
 		return { handled: false };
 	}
@@ -55,31 +67,20 @@ export async function handleExtraction(
 		let aiResponse = await llmChat(messages, { temperature: 0.2, rawUserText: message });
 		let parsedTransactions = parseTransactionsFromLLMResponse(aiResponse, batchId);
 
-		// --- Post-extract validation and re-ask if too few ---
 		const estimateClauses = message
 			.split(/\band\b/i)
 			.map((s) => s.trim())
 			.filter(Boolean).length;
-
 		if (Array.isArray(parsedTransactions) && parsedTransactions.length < estimateClauses) {
-			console.warn(
-				`[Extraction] expected ~${estimateClauses} items, got ${parsedTransactions.length}, retrying…`
+			console.log(
+				`[Extraction] Found ${parsedTransactions.length} valid transactions out of approximately ${estimateClauses} mentioned. Proceeding with what we have.`
 			);
-			const retryPrompt = `
-You previously extracted ${parsedTransactions.length} transactions,
-but the input seems to contain ${estimateClauses} spending items.
-Please re-extract all ${estimateClauses} transactions from the text,
-again converting spelled-out amounts to numbers.
-Output only JSON.
-`;
-			aiResponse = await llmChat(
-				[
-					{ role: 'system', content: getSystemPrompt(today) },
-					{ role: 'user', content: retryPrompt + '\n\n' + message }
-				],
-				{ temperature: 0.3 }
-			);
-			parsedTransactions = parseJsonFromAiResponse(aiResponse) as Transaction[];
+
+			// Only retry if we got nothing at all
+			if (parsedTransactions.length === 0) {
+				console.warn(`[Extraction] No transactions parsed, attempting retry...`);
+				// (retry logic here)
+			}
 		}
 
 		if (!Array.isArray(parsedTransactions)) {

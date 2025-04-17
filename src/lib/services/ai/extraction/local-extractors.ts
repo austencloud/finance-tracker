@@ -4,6 +4,51 @@ import { v4 as uuidv4 } from 'uuid';
 import { resolveAndFormatDate } from '$lib/utils/date';
 import { categorizeTransaction } from '../../categorizer';
 import type { Transaction } from '$lib/stores/types';
+// Add this helper function at the top of the file (after imports)
+/**
+ * Processes currency symbols in description and amount
+ * @param description The transaction description text
+ * @param amount The detected amount
+ * @returns Object with processed description and amount
+ */
+function processCurrency(
+	description: string,
+	amount: number
+): { description: string; amount: number } {
+	// Check for foreign currency symbols in the description
+	const currencySymbols = {
+		'¥': 'JPY',
+		'€': 'EUR',
+		'£': 'GBP',
+		'₹': 'INR',
+		'₩': 'KRW'
+		// Add more currencies as needed
+	};
+
+	// Check if any currency symbol is present in the description
+	let foreignCurrency = null;
+	for (const [symbol, code] of Object.entries(currencySymbols)) {
+		if (description.includes(symbol)) {
+			foreignCurrency = { symbol, code };
+			break;
+		}
+	}
+
+	// If we found a foreign currency, add it to the description
+	if (foreignCurrency) {
+		// Don't convert the amount, but note the currency in the description
+		const updatedDesc = description.includes(foreignCurrency.code)
+			? description
+			: `${description} (${foreignCurrency.code})`;
+
+		return {
+			description: updatedDesc,
+			amount: amount // Keep the original amount value
+		};
+	}
+
+	return { description, amount };
+}
 
 // --- textContainsTransactionPatterns function (keep as is) ---
 export function textContainsTransactionPatterns(text: string): boolean {
@@ -273,13 +318,18 @@ export function extractConversationalTransactions(
 				const finalCategory =
 					direction === 'out' && category === 'Other / Uncategorized' ? 'Expenses' : category;
 
+				const { description: processedDesc, amount: processedAmount } = processCurrency(
+					description,
+					amount
+				);
+
 				transactions.push({
 					id: uuidv4(),
-					batchId: batchId, // <-- Assign batchId
+					batchId: batchId,
 					date: transactionDate,
-					description: description,
+					description: processedDesc, // Use processed description with currency info
 					type: type,
-					amount: amount,
+					amount: processedAmount, // Use processed amount
 					category: finalCategory,
 					notes: '',
 					direction: direction
