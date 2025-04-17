@@ -26,6 +26,10 @@ export type HandlerResult = {
 	extractedCount?: number;
 	transactions?: Transaction[];
 
+	// New property: When true, allows a non-handling handler to provide a response
+	// that will be chained with the next handler that actually handles the message
+	chainResponse?: boolean;
+
 	// Additional dynamic properties
 	[key: string]: any;
 };

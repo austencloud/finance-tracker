@@ -24,7 +24,8 @@ export const TransactionSchema = z.object({
 		})
 		.positive({ message: 'Amount must be positive (direction is handled separately)' })
 		.or(z.literal(0)),
-	category: z.string() as z.ZodType<Category>,
+	// category: z.string() as z.ZodType<Category>, // OLD
+	categories: z.array(z.string()).min(1, { message: 'At least one category is required' }), // NEW
 	notes: z.string({ invalid_type_error: 'Notes must be a string' }).default(''),
 	direction: z.enum(['in', 'out', 'unknown'], {
 		required_error: 'Direction (in/out/unknown) is required',

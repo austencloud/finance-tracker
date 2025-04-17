@@ -53,12 +53,10 @@ export const correctionHandler = createConditionalHandler(
 		// If we still don't have a specific transaction ID, we cannot proceed reliably
 		if (!txnId) {
 			console.log(
-				'[CorrectionHandler] No specific transaction context found for correction attempt.'
+				'[CorrectionHandler] No specific transaction context found. Passing to next handler.'
 			);
-			return {
-				response:
-					"I'm not sure which transaction you're trying to correct. Could you be more specific?"
-			};
+			// Return handled: false to allow other handlers (like extraction) to process
+			return { handled: false };
 		}
 
 		// Set processing status

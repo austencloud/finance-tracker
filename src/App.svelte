@@ -23,6 +23,7 @@
 	import TransactionModal from '$lib/components/transactions/TransactionModal.svelte';
 	import BulkProcessingUI from '$lib/components/transactions/BulkProcessingUI.svelte';
 	import BulkProcessingDebug from '$lib/components/transactions/BulkProcessingDebug.svelte';
+	import GlobalCopyButton from '$lib/components/common/GlobalCopyButton.svelte';
 	let showDebugTools = true; // Set to false for production
 
 	onMount(async () => {
@@ -71,10 +72,9 @@
 
 <main class="page-container">
 	<h1>AI Transaction Entry</h1>
-
-	{#if $conversationStore.isProcessing}
-		<div class="processing-indicator">AI Assistant is working...</div>
-	{/if}
+	<div class="copy-btn-container">
+		<GlobalCopyButton />
+	</div>
 
 	<LLMWithDataLayout />
 	<BulkProcessingUI />
@@ -90,24 +90,11 @@
 			Generate HTML Report
 		</button>
 	</div>
-
-
 </main>
 
 <TransactionModal />
 
 <style>
-	/* Styles remain the same */
-	.processing-indicator {
-		text-align: center;
-		padding: 5px;
-		background-color: #eaf2f8;
-		color: #3498db;
-		border-radius: 4px;
-		margin-bottom: 15px;
-		font-style: italic;
-	}
-
 	.page-container {
 		max-width: 1400px;
 		margin: 0 auto;
@@ -120,6 +107,12 @@
 		text-align: center;
 		color: #2c3e50;
 		margin-bottom: 30px;
+	}
+
+	.copy-btn-container {
+		display: flex;
+		justify-content: center;
+		margin: 8px 0 16px 0;
 	}
 
 	.global-actions {

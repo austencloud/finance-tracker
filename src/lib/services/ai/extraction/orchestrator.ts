@@ -5,7 +5,7 @@ import { enhancedLocalExtraction } from './local-extractors';
 import { parseTransactionsFromLLMResponse } from './llm-parser';
 import type { Transaction } from '$lib/types/types';
 import { v4 as uuidv4 } from 'uuid'; // <-- Import uuid
-import { llmGenerateJson } from '../llm-helpers';
+import { llmGenerateJson, LLMRetryError } from '../llm-helpers'; // Import LLMRetryError
 import { isOllamaAvailable } from '../ollama-client';
 import { getExtractionPrompt, getOptimizedExtractionPrompt } from '../prompts/extractionPrompts';
 
@@ -78,8 +78,14 @@ export async function extractTransactionsFromText(text: string): Promise<Transac
 					result = [];
 				}
 			} catch (error) {
-				console.error('[Orchestrator] LLM API extraction error:', error);
-				result = []; // Ensure result is empty on LLM error
+				// --- Specific handling for LLMRetryError ---
+				if (error instanceof LLMRetryError) {
+					console.error(`[Orchestrator] Persistent LLM failure after retries: ${error.message}`);
+				} else {
+					// Generic error handling
+					console.error('[Orchestrator] LLM API extraction error:', error);
+				}
+				result = []; // Ensure result is empty on any LLM error
 			}
 		} else if (!llmCouldBeAvailable) {
 			console.log('[Orchestrator] LLM not available, skipping API call.');

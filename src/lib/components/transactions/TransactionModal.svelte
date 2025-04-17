@@ -28,11 +28,12 @@
 	// Get the full transaction object using the selector based on the ID
 	$: selectedTransactionObject = getTransactionById(selectedTransactionId);
 
-	// Update local 'notes' when the selected transaction changes
+	// Update local 'notes' and modal category when the selected transaction changes
 	$: if (selectedTransactionObject) {
 		notes = selectedTransactionObject.notes || '';
-		// Also update the modal's current category when a new transaction is selected
-		uiStore.setModalCategory(selectedTransactionObject.category || $categories[0]); // Use first category as fallback
+		// Use the first category in the array for the modal's initial state, or fallback
+		const firstCategory = selectedTransactionObject.categories?.[0] || $categories[0];
+		uiStore.setModalCategory(firstCategory as Category);
 	} else {
 		notes = ''; // Clear notes if no transaction selected
 	}
@@ -79,7 +80,7 @@
 	// Handler for when the category select element changes
 	function handleCategoryChange(event: Event) {
 		const target = event.target as HTMLSelectElement;
-		// --- Call action on uiStore to update the *modal's* selected category ---
+		// Update the modal's selected category in the UI store
 		uiStore.setModalCategory(target.value as Category);
 	}
 
@@ -89,12 +90,11 @@
 		const modalCategory = $uiStore.currentCategory; // Get category from uiStore
 
 		if (currentTxnId && modalCategory) {
-			// --- Call action on transactionStore ---
+			// Use assignCategory instead of updateCategories
 			transactionStore.assignCategory(currentTxnId, modalCategory);
-			// Optional: Show feedback or close modal after update
 		} else {
-            console.warn("Cannot update category: Missing transaction ID or selected category.");
-        }
+			console.warn('Cannot update category: Missing transaction ID or selected category.');
+		}
 	}
 
 	// Handler for saving notes to the transaction
@@ -122,7 +122,9 @@
 		aria-labelledby="modal-title"
 		tabindex="-1"
 		on:click|self={closeModal}
-		on:keydown={(e) => { if (e.key === 'Escape') closeModal(); }}
+		on:keydown={(e) => {
+			if (e.key === 'Escape') closeModal();
+		}}
 	>
 		<div class="modal-content">
 			<h3 id="modal-title">Transaction Details</h3>
@@ -134,21 +136,27 @@
 				<p>
 					<strong>Amount:</strong>
 					<span
-						class={selectedTransactionObject.direction === 'out' ? 'expense-amount' : 'income-amount'}
+						class={selectedTransactionObject.direction === 'out'
+							? 'expense-amount'
+							: 'income-amount'}
 					>
 						{formatCurrency(selectedTransactionObject.amount, selectedTransactionObject.currency)}
 					</span>
-                    {#if selectedTransactionObject.direction !== 'unknown'}
-                        ({selectedTransactionObject.direction})
-                    {/if}
+					{#if selectedTransactionObject.direction !== 'unknown'}
+						({selectedTransactionObject.direction})
+					{/if}
 				</p>
 			</div>
 
 			<div class="category-selector">
-				<label for="modal-category-select"> 
+				<label for="modal-category-select">
 					<strong>Category:</strong>
 					<div class="category-controls">
-						<select id="modal-category-select" value={$uiStore.currentCategory} on:change={handleCategoryChange}>
+						<select
+							id="modal-category-select"
+							value={$uiStore.currentCategory}
+							on:change={handleCategoryChange}
+						>
 							{#each $categories as category (category)}
 								<option value={category}>{category}</option>
 							{/each}
@@ -159,31 +167,29 @@
 								class="suggest-button"
 								on:click={requestCategorySuggestion}
 								disabled={suggestingCategory}
-                                title="Suggest category using AI"
+								title="Suggest category using AI"
 							>
-								{suggestingCategory ? 'Suggesting...' : 'Suggest'} 
+								{suggestingCategory ? 'Suggesting...' : 'Suggest'}
 							</button>
 						{/if}
 					</div>
 				</label>
 				<button on:click={handleUpdateCategory} class="action-button update-button">
-                    Update Category
-                </button>
+					Update Category
+				</button>
 			</div>
 
 			<div class="notes-section">
-				<label for="modal-notes-textarea"> 
+				<label for="modal-notes-textarea">
 					<strong>Notes:</strong>
 					<textarea
-                        id="modal-notes-textarea"
-                        bind:value={notes}
-                        placeholder="Add notes about this transaction..."
-                        rows="3"
-                    ></textarea>
+						id="modal-notes-textarea"
+						bind:value={notes}
+						placeholder="Add notes about this transaction..."
+						rows="3"
+					></textarea>
 				</label>
-				<button on:click={handleSaveNotes} class="action-button save-button">
-                    Save Notes
-                </button>
+				<button on:click={handleSaveNotes} class="action-button save-button"> Save Notes </button>
 			</div>
 
 			<button class="close-button" on:click={closeModal}> Close </button>
@@ -201,7 +207,7 @@
 		align-items: center;
 		justify-content: center;
 		z-index: 1000;
-        padding: 20px; /* Add padding for smaller screens */
+		padding: 20px; /* Add padding for smaller screens */
 	}
 
 	.modal-content {
@@ -213,30 +219,36 @@
 		max-height: 90vh;
 		overflow-y: auto;
 		box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
-        display: flex;
-        flex-direction: column;
-        gap: 15px; /* Add gap between sections */
+		display: flex;
+		flex-direction: column;
+		gap: 15px; /* Add gap between sections */
 	}
 
 	h3 {
 		margin-top: 0;
-        margin-bottom: 10px; /* Adjust margin */
+		margin-bottom: 10px; /* Adjust margin */
 		color: #2c3e50;
-        text-align: center;
-        border-bottom: 1px solid #eee;
-        padding-bottom: 10px;
+		text-align: center;
+		border-bottom: 1px solid #eee;
+		padding-bottom: 10px;
 	}
 
 	.transaction-details p {
-        margin: 5px 0; /* Consistent paragraph spacing */
-        line-height: 1.5;
-    }
-    .transaction-details strong {
-        color: #34495e; /* Slightly emphasize labels */
-    }
+		margin: 5px 0; /* Consistent paragraph spacing */
+		line-height: 1.5;
+	}
+	.transaction-details strong {
+		color: #34495e; /* Slightly emphasize labels */
+	}
 
-	.expense-amount { color: #c0392b; font-weight: 600; }
-	.income-amount { color: #27ae60; font-weight: 600; }
+	.expense-amount {
+		color: #c0392b;
+		font-weight: 600;
+	}
+	.income-amount {
+		color: #27ae60;
+		font-weight: 600;
+	}
 
 	.category-selector,
 	.notes-section {
@@ -245,16 +257,16 @@
 		flex-direction: column;
 		gap: 8px; /* Reduced gap */
 	}
-    label {
-        font-weight: bold;
-        font-size: 0.9em;
-        color: #555;
-    }
+	label {
+		font-weight: bold;
+		font-size: 0.9em;
+		color: #555;
+	}
 	.category-controls {
 		display: flex;
 		gap: 10px;
 		margin-top: 5px;
-        align-items: center; /* Align select and button */
+		align-items: center; /* Align select and button */
 	}
 
 	select,
@@ -263,18 +275,18 @@
 		padding: 8px 10px;
 		border: 1px solid #ccc; /* Slightly darker border */
 		border-radius: 4px;
-        font-size: 14px;
-        box-sizing: border-box;
+		font-size: 14px;
+		box-sizing: border-box;
 	}
-    select {
-        flex-grow: 1; /* Allow select to take available space */
-        cursor: pointer;
-    }
+	select {
+		flex-grow: 1; /* Allow select to take available space */
+		cursor: pointer;
+	}
 
 	textarea {
 		font-family: inherit; /* Use standard font */
 		resize: vertical;
-        min-height: 60px;
+		min-height: 60px;
 	}
 
 	button {
@@ -284,35 +296,48 @@
 		border-radius: 4px;
 		cursor: pointer;
 		transition: background-color 0.2s;
-        font-size: 14px;
-        align-self: flex-start; /* Align buttons left by default */
+		font-size: 14px;
+		align-self: flex-start; /* Align buttons left by default */
 	}
-    button:hover:not(:disabled) { filter: brightness(90%); }
-    button:disabled { background-color: #bdc3c7; cursor: not-allowed; opacity: 0.7; }
+	button:hover:not(:disabled) {
+		filter: brightness(90%);
+	}
+	button:disabled {
+		background-color: #bdc3c7;
+		cursor: not-allowed;
+		opacity: 0.7;
+	}
 
-    .action-button { /* Common style for update/save */
-        background-color: #3498db; /* Blue */
-        margin-top: 5px; /* Add small top margin */
-    }
-     .action-button:hover:not(:disabled) { background-color: #2980b9; }
+	.action-button {
+		/* Common style for update/save */
+		background-color: #3498db; /* Blue */
+		margin-top: 5px; /* Add small top margin */
+	}
+	.action-button:hover:not(:disabled) {
+		background-color: #2980b9;
+	}
 
 	.suggest-button {
 		background-color: #9b59b6; /* Purple */
 		padding: 6px 10px;
 		font-size: 0.9em;
-        flex-shrink: 0; /* Prevent shrinking */
-        align-self: center; /* Align with select */
-        margin-top: 0; /* Remove top margin */
+		flex-shrink: 0; /* Prevent shrinking */
+		align-self: center; /* Align with select */
+		margin-top: 0; /* Remove top margin */
 	}
-	.suggest-button:hover:not(:disabled) { background-color: #8e44ad; }
-	.suggest-button:disabled { background-color: #d1c4e9; }
+	.suggest-button:hover:not(:disabled) {
+		background-color: #8e44ad;
+	}
+	.suggest-button:disabled {
+		background-color: #d1c4e9;
+	}
 
 	.close-button {
 		margin-top: 15px; /* More space before close */
 		background-color: #7f8c8d; /* Grey */
-        align-self: flex-end; /* Align close button right */
+		align-self: flex-end; /* Align close button right */
 	}
-	.close-button:hover:not(:disabled) { background-color: #606d76; }
-
-
+	.close-button:hover:not(:disabled) {
+		background-color: #606d76;
+	}
 </style>

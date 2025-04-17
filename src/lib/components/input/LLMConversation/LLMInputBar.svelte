@@ -76,7 +76,6 @@
 				rawUserText: ''
 			});
 
-
 			const example = aiResponse.split('\n')[0].trim().replace(/^"|"$/g, '');
 			userInput = example;
 			// Automatically submit after generating example
@@ -91,10 +90,7 @@
 		const today = new Date().toISOString().split('T')[0];
 		const system = getSystemPrompt(today);
 		const prompt = `Generate a user-style transaction input that describes splitting a bill or expense with others. The message should clearly mention splitting, the total amount, and optionally the context (e.g. dinner, rent, groceries). Use natural, realistic phrasing. Output only one line, no explanation.`;
-		
-		
-		
-		
+
 		try {
 			const aiResponse = await llmChat([makeSystemMsg(system), makeUserMsg(prompt)], {
 				temperature: 0.8,
@@ -233,11 +229,16 @@
 			<button
 				type="submit"
 				class="send-button"
+				class:processing={isProcessingValue || isSubmitting}
 				on:click={debounceSubmit}
 				disabled={!userInput.trim() || isProcessingValue || isSubmitting}
 				aria-label="Send message"
 			>
-				Send {#if isProcessingValue || isSubmitting}<span class="loading-dots">...</span>{/if}
+				{#if isProcessingValue || isSubmitting}
+					<span class="spinner"></span>Processing...
+				{:else}
+					Send
+				{/if}
 			</button>
 		</div>
 	</form>
@@ -371,16 +372,15 @@
 		cursor: not-allowed;
 		opacity: 0.7;
 	}
-	.loading-dots {
+	/* Remove old loading dots style */
+	/* .loading-dots {
 		display: inline-block;
 		margin-left: 4px;
-		/* Simple dot animation */
 		width: 1em;
 		text-align: left;
 		animation: ellipsis 1.25s infinite;
-	}
-	/* Add keyframes if needed, or use a simpler indicator */
-	@keyframes ellipsis {
+	} */
+	/* @keyframes ellipsis {
 		0% {
 			content: '.';
 		}
@@ -390,7 +390,7 @@
 		66% {
 			content: '...';
 		}
-	}
+	} */
 
 	.cancel-button {
 		background-color: #e74c3c; /* Red */
@@ -402,10 +402,35 @@
 	.send-button {
 		background-color: #3498db; /* Blue */
 		margin-left: auto; /* Push send button to the right */
-		min-width: 80px;
+		min-width: 110px; /* Adjusted width for spinner */
+		display: flex; /* Align spinner and text */
+		align-items: center;
+		justify-content: center;
+		gap: 6px;
+	}
+	.send-button.processing {
+		background-color: #5dade2; /* Lighter blue when processing */
+		cursor: wait;
 	}
 	.send-button:hover:not(:disabled) {
 		background-color: #2980b9;
+	}
+
+	/* Add spinner styles */
+	.spinner {
+		display: inline-block;
+		width: 14px;
+		height: 14px;
+		border: 2px solid rgba(255, 255, 255, 0.3);
+		border-radius: 50%;
+		border-top-color: #fff;
+		animation: spin 0.8s ease-in-out infinite;
+	}
+
+	@keyframes spin {
+		to {
+			transform: rotate(360deg);
+		}
 	}
 
 	@media (max-width: 600px) {

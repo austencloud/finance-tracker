@@ -126,13 +126,22 @@ export async function llmChat(
 	return cleanedResponse;
 }
 
+// Custom error for persistent LLM failures
+export class LLMRetryError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = 'LLMRetryError';
+	}
+}
+
 /**
- * Attempts to generate valid JSON using a two-pass strategy:
- * 1. Try the 'simple' model first and verify its output is valid JSON.
- * 2. If the first pass fails or produces invalid JSON, fallback to the 'large' model.
+ * Attempts to generate valid JSON using a multi-pass strategy with retries:
+ * 1. Try the 'simple' model first.
+ * 2. If simple fails, try the 'large' model up to MAX_RETRIES times.
  * @param messages - Conversation history (system prompt will be added).
  * @param opts - Options like temperature, forcing model type.
- * @returns A string containing the JSON output (or throws error on failure).
+ * @returns A string containing the JSON output.
+ * @throws {LLMRetryError} If all attempts fail.
  */
 export async function llmGenerateJson(
 	messages: ChatMessage[],
@@ -141,76 +150,77 @@ export async function llmGenerateJson(
 		forceHeavy?: boolean;
 		forceSimple?: boolean;
 		rawUserText?: string;
-	} = {}
+	} = {},
+	maxRetries = 3 // Maximum attempts for the heavy model
 ): Promise<string> {
 	const today = new Date().toISOString().split('T')[0];
 	const systemPrompt = getSystemPrompt(today);
-	// Prepend system prompt to messages
 	const fullMessages = [makeSystemMsg(systemPrompt), ...messages];
-
-	// Determine sample text for model picking heuristic
 	const sampleText =
 		opts.rawUserText ?? [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
 
 	// --- First Pass: Simple Model ---
-	// Only try simple model if not forced to use heavy
 	if (!opts.forceHeavy) {
 		try {
-			const simpleModelId = pickModel(sampleText, { forceSimple: true }); // Force simple for first pass
+			const simpleModelId = pickModel(sampleText, { forceSimple: true });
 			setOllamaModel(simpleModelId);
-			console.log(`[llmGenerateJson] Attempting with simple model: ${simpleModelId}`);
+			logDebug(`[llmGenerateJson] Attempt 1 (Simple): ${simpleModelId}`);
 			const firstPassResponse = await ollamaChat(
 				fullMessages,
-				{ temperature: opts.temperature ?? 0.1 }, // Low temp for JSON
-				true // Request JSON format
+				{ temperature: opts.temperature ?? 0.1 },
+				true
 			);
-
-			if (firstPassResponse && isValidJson(firstPassResponse)) {
-				console.log(`[llmGenerateJson] Simple model succeeded with valid JSON.`);
-				return firstPassResponse; // Return valid JSON from simple model
-			} else {
-				console.warn('[llmGenerateJson] Simple model response was invalid JSON or empty.');
+			const cleanedFirstPass = stripThinkTags(firstPassResponse ?? '');
+			if (cleanedFirstPass && isValidJson(cleanedFirstPass)) {
+				logDebug(`[llmGenerateJson] Simple model succeeded.`);
+				return cleanedFirstPass;
 			}
+			logDebug('[llmGenerateJson] Simple model response invalid/empty.');
 		} catch (err) {
-			console.warn('[llmGenerateJson] Simple model attempt failed:', err);
-			// Proceed to heavy model fallback
+			logDebug('[llmGenerateJson] Simple model attempt failed:', err);
 		}
 	} else {
-		console.log('[llmGenerateJson] Skipping simple model (forceHeavy=true).');
+		logDebug('[llmGenerateJson] Skipping simple model (forceHeavy=true).');
 	}
 
-	// --- Fallback: Heavy Model ---
-	try {
-		const largeModelId = OLLAMA_MODELS.LARGE;
-		setOllamaModel(largeModelId);
-		console.log(`[llmGenerateJson] Attempting with heavy model: ${largeModelId}`);
-		let heavyResponse = await ollamaChat(
-			fullMessages,
-			{ temperature: opts.temperature ?? 0.1 }, // Low temp for JSON
-			true // Request JSON format
-		);
+	// --- Fallback & Retry: Heavy Model ---
+	const largeModelId = OLLAMA_MODELS.LARGE;
+	setOllamaModel(largeModelId); // Set for the first heavy attempt
+	let lastError: Error | null = null;
 
-		heavyResponse = stripThinkTags(heavyResponse); // Clean response
-
-		// Final validation before returning
-		if (heavyResponse && isValidJson(heavyResponse)) {
-			console.log(`[llmGenerateJson] Heavy model succeeded with valid JSON.`);
-			return heavyResponse;
-		} else {
-			console.error(
-				'[llmGenerateJson] Heavy model response was invalid JSON or empty:',
-				heavyResponse
+	for (let attempt = 1; attempt <= maxRetries; attempt++) {
+		try {
+			logDebug(`[llmGenerateJson] Attempt ${attempt + 1} (Heavy): ${largeModelId}`);
+			// Ensure model is set for retries too, in case another call changed it
+			setOllamaModel(largeModelId);
+			let heavyResponse = await ollamaChat(
+				fullMessages,
+				{ temperature: opts.temperature ?? 0.1 },
+				true
 			);
-			throw new Error('Heavy model failed to generate valid JSON.');
+			heavyResponse = stripThinkTags(heavyResponse ?? '');
+
+			if (heavyResponse && isValidJson(heavyResponse)) {
+				logDebug(`[llmGenerateJson] Heavy model succeeded on attempt ${attempt}.`);
+				return heavyResponse;
+			}
+			logDebug(`[llmGenerateJson] Heavy model attempt ${attempt} response invalid/empty.`);
+			lastError = new Error('Heavy model returned invalid/empty JSON.');
+		} catch (err) {
+			logDebug(`[llmGenerateJson] Heavy model attempt ${attempt} failed:`, err);
+			lastError = err instanceof Error ? err : new Error(String(err));
 		}
-	} catch (err) {
-		// Handle errors from the heavy model attempt
-		const fallbackMessage = getOllamaFallbackResponse(
-			err instanceof OllamaApiError ? err : undefined
-		);
-		console.error('[llmGenerateJson] Heavy model attempt failed:', err);
-		throw new Error(`LLM JSON generation failed: ${fallbackMessage}`); // Re-throw a more informative error
+
+		if (attempt < maxRetries) {
+			// Optional: Add a small delay before retrying
+			await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
+		}
 	}
+
+	// If loop finishes without returning, all attempts failed
+	const finalErrorMessage = `LLM JSON generation failed after ${maxRetries + 1} attempts (1 simple, ${maxRetries} heavy). Last error: ${lastError?.message || 'Unknown error'}`;
+	console.error(`[llmGenerateJson] ${finalErrorMessage}`);
+	throw new LLMRetryError(finalErrorMessage);
 }
 
 /* ------------------------------------------------------------------ */

@@ -11,7 +11,8 @@ import {
 } from '$lib/schemas/LLMOutputSchema';
 import { TransactionSchema } from '$lib/schemas/TransactionSchema';
 import type { Transaction } from '$lib/types/types';
-import { extractCleanJson } from '$lib/utils/helpers';
+// import { extractCleanJson } from '$lib/utils/helpers'; // Keep if used elsewhere, but we use fixJson now
+import { fixJson } from '../parsers/fixJson'; // Import the new fixer
 
 /**
  * Parses LLM JSON output into an array of Transaction objects.
@@ -23,17 +24,25 @@ import { extractCleanJson } from '$lib/utils/helpers';
  * @returns Array of validated Transaction objects.
  */
 export function parseTransactionsFromLLMResponse(raw: string, batchId: string): Transaction[] {
-	// 1) try to strip markdown fences
-	let jsonText = raw.trim().replace(/^```json\s*|\s*```$/gi, '');
-	const cleaned = extractCleanJson(jsonText);
-	if (cleaned) {
-		jsonText = cleaned;
+	// 1) Use the robust fixer first
+	const fixedJsonText = fixJson(raw);
+
+	if (!fixedJsonText) {
+		console.error('[LLM Parser] Could not salvage JSON even after fixing attempts. Raw was:', raw);
+		return [];
 	}
+
 	let parsed: any;
 	try {
-		parsed = JSON.parse(jsonText);
+		parsed = JSON.parse(fixedJsonText);
 	} catch (err) {
-		console.error('[LLM Parser] JSON parse failed even after cleaning:', err, '\nRaw was:', raw);
+		// This should be less common now, but keep as a final safety net
+		console.error(
+			'[LLM Parser] JSON parse failed even after fixing:',
+			err,
+			'\nFixed JSON was:',
+			fixedJsonText
+		);
 		return [];
 	}
 
@@ -47,17 +56,14 @@ export function parseTransactionsFromLLMResponse(raw: string, batchId: string): 
 	return arr.map((o) => ({
 		id: o.id || uuidv4(),
 		batchId,
-		// *** Use the resolver function here ***
-		date: resolveAndFormatDate(o.date), // Ensures date is either YYYY-MM-DD or today's date
+		date: resolveAndFormatDate(o.date),
 		description: o.description ?? 'unknown',
 		type: o.type ?? 'unknown',
 		amount: typeof o.amount === 'number' ? o.amount : parseFloat(o.amount) || 0,
-		currency: o.currency?.toUpperCase() ?? 'USD', // Keep currency handling
-		// Ensure category logic is appropriate (maybe move to AppStore.transactions.add?)
+		currency: o.currency?.toUpperCase() ?? 'USD',
 		category: o.category ?? 'Other / Uncategorized',
+		categories: o.categories ?? [], // Ensure categories property exists
 		notes: o.details ?? '',
 		direction: o.direction ?? 'unknown'
-		// Add needs_clarification if you implemented that logic
-		// needs_clarification: o.needs_clarification ?? null,
 	}));
 }

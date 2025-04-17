@@ -16,8 +16,8 @@ export async function suggestCategory(
 	transaction: Transaction,
 	availableCategories: readonly Category[] // Accept readonly array
 ): Promise<Category> {
-	// Default to the transaction's current category in case of errors or no suggestion
-	const fallbackCategory = transaction.category || 'Other / Uncategorized';
+	// Default to the transaction's first category or a generic fallback
+	const fallbackCategory = (transaction.categories?.[0] || 'Other / Uncategorized') as Category;
 
 	if (!transaction) {
 		console.warn('[suggestCategory] No transaction provided.');
@@ -30,7 +30,20 @@ export async function suggestCategory(
 
 	try {
 		// Create the prompt using the helper function
-		const prompt = getCategorySuggestionPrompt(transaction, availableCategories);
+		const prompt = `
+Given the following transaction details:
+Date: ${transaction.date}
+Description: ${transaction.description}
+Amount: ${transaction.amount} ${transaction.currency}
+Direction: ${transaction.direction}
+Type: ${transaction.type}
+Existing Categories: ${transaction.categories.join(', ') || 'None'}
+
+And the available categories:
+${availableCategories.join(', ')}
+
+Suggest the single most relevant category from the available list. Respond with ONLY the category name.
+`.trim();
 		// Prepare messages for the chat endpoint
 		const messages = [{ role: 'user' as const, content: prompt }];
 

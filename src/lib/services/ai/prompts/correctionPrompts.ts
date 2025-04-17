@@ -11,48 +11,53 @@ import type { Category, Transaction } from '$lib/types/types'; // Assuming types
  * @returns The prompt string for the LLM.
  */
 export function getCorrectionParsingPrompt(
-    userCorrectionMessage: string,
-    targetTransaction: Transaction,
-    availableCategories: readonly Category[] // Use readonly for safety
+	userCorrectionMessage: string,
+	targetTransaction: Transaction,
+	availableCategories: readonly Category[] // Use readonly for safety
 ): string {
-    // Format transaction details for the prompt context
-    // Ensure amount is treated as a number before toFixed
-    const amountValue = typeof targetTransaction.amount === 'number' ? targetTransaction.amount : 0;
-    const transactionContext = `
+	// Format transaction details for the prompt context
+	// Ensure amount is treated as a number before toFixed
+	const amountValue = typeof targetTransaction.amount === 'number' ? targetTransaction.amount : 0;
+	// Handle the categories array
+	const categoryDisplay =
+		targetTransaction.categories && targetTransaction.categories.length > 0
+			? targetTransaction.categories.join(', ')
+			: '(none)'; // Display '(none)' if the array is empty or doesn't exist
+
+	const transactionContext = `
 Transaction Details to Correct:
 - ID: ${targetTransaction.id}
 - Date: ${targetTransaction.date}
 - Description: ${targetTransaction.description}
 - Amount: ${amountValue.toFixed(2)}
-- Category: ${targetTransaction.category}
+- Category/Categories: ${categoryDisplay} // Display category/categories
 - Type: ${targetTransaction.type}
 - Direction: ${targetTransaction.direction}
 - Notes: ${targetTransaction.notes || '(none)'}
     `.trim();
 
-    // Define the valid fields the user can correct
-    const validFields = "'amount', 'date', 'description', 'category'"; // Add others as needed
+	// Define the valid fields the user can correct
+	const validFields = "'amount', 'date', 'description', 'categories'"; // Keep 'categories' as the target field name
 
-    // Define the expected JSON output structure
-    const jsonStructure = `
+	// Define the expected JSON output structure
+	const jsonStructure = `
 {
   "correction_possible": boolean, // true if the user message seems like a correction request, false otherwise
   "target_field": string, // ONE of ${validFields} or 'unknown' if the field isn't clear
-  "new_value": string | number | null // The new value extracted. Use number for amount, string for others. Return null if value unclear.
+  "new_value": string | number | string[] | null // The new value extracted. Use number for amount, string for date/description, string array for categories. Return null if value unclear.
 }
     `.trim();
 
-    // Get today's date for resolving relative dates
-    // Use the timezone where the code is running (server-side or client-side)
-    const today = new Date();
-    const todayDateString = today.toISOString().split('T')[0];
-    // Get yesterday's date
-    const yesterday = new Date(today);
-    yesterday.setDate(today.getDate() - 1);
-    const yesterdayDateString = yesterday.toISOString().split('T')[0];
+	// Get today's date for resolving relative dates
+	// Use the timezone where the code is running (server-side or client-side)
+	const today = new Date();
+	const todayDateString = today.toISOString().split('T')[0];
+	// Get yesterday's date
+	const yesterday = new Date(today);
+	yesterday.setDate(today.getDate() - 1);
+	const yesterdayDateString = yesterday.toISOString().split('T')[0];
 
-
-    return `
+	return `
 You are a precise assistant helping to correct transaction details.
 The user is likely trying to correct the following transaction:
 
@@ -69,7 +74,7 @@ Your task is to parse the user's message and determine:
     - For 'amount', provide a positive number (e.g., 25.50). If the user only mentions the amount without specifying field, assume it's 'amount'.
     - For 'date', provide the date as a 'YYYY-MM-DD' string. Resolve relative dates like 'today' (${todayDateString}), 'yesterday' (${yesterdayDateString}) if possible. If resolution fails, return null.
     - For 'description', provide the new text.
-    - For 'category', provide ONE category name exactly as it appears in this list: [${availableCategories.join(', ')}]. Match case-insensitively but return the correct casing from the list. If the user mentions a category not in the list, set target_field to 'category' but new_value to null.
+    - For 'categories', provide ONE category name exactly as it appears in this list: [${availableCategories.join(', ')}]. Match case-insensitively but return the correct casing from the list. If the user mentions a category not in the list, or if the intent is unclear, set target_field to 'categories' but new_value to null.
     - If the new value cannot be determined clearly for the identified field, set new_value to null.
 
 Output ONLY the following JSON object, with no other text, explanations, or markdown formatting (\`\`\`) before or after it:
@@ -100,8 +105,8 @@ Available Categories: ["Income", "Expenses", "Groceries"]
 Output JSON:
 {
   "correction_possible": true,
-  "target_field": "category",
-  "new_value": "Expenses"
+  "target_field": "categories",
+  "new_value": "Expenses" // Keep as single string for now based on example, adjust if multi-category needed
 }
 
 Example 4:
@@ -128,8 +133,8 @@ Available Categories: ["Groceries", "Restaurants", "Expenses"]
 Output JSON:
 {
   "correction_possible": true,
-  "target_field": "category",
-  "new_value": null
+  "target_field": "categories",
+  "new_value": null // Category "food" not in the list
 }
 `.trim();
 }

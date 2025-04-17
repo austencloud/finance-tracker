@@ -55,7 +55,9 @@ export function getSummaryPrompt(transactions: Transaction[]): string {
 				t.description && t.description.toLowerCase() !== 'unknown' && t.description.trim() !== ''
 					? `for ${t.description}`
 					: '';
-			const categoryDisplay = t.category ? `(${t.category})` : '(No Category)';
+			// Use the first category from the array, or a fallback
+			const categoryDisplay =
+				t.categories && t.categories.length > 0 ? `(${t.categories[0]})` : '(No Categories)';
 
 			return `${i + 1}. ${dateDisplay}: ${formatCurrency(amtNum)} ${directionDisplay} ${descriptionDisplay} ${categoryDisplay}`;
 		})

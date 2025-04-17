@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { Transaction, Category } from '../types/types'; // Adjust path
 import { analysisStore } from './analysisStore'; // Import analysis store to trigger runs
 import { uiStore } from './uiStore'; // Import UI store to clear selection on delete
+import { resolveAndFormatDate } from '$lib/utils/date';
 
 // Debounce helper (can be moved to utils)
 let analysisTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -15,12 +16,11 @@ function debounceAnalysis(run: () => void) {
 
 // Helper for temporary success messages (could be moved to uiStore)
 function showTemporarySuccessMessage(duration = 2000) {
-    uiStore.showSuccessMessage(true);
+	uiStore.showSuccessMessage(true);
 	setTimeout(() => {
-        uiStore.showSuccessMessage(false);
+		uiStore.showSuccessMessage(false);
 	}, duration);
 }
-
 
 // --- Store Definition ---
 const initialTransactions: Transaction[] = [];
@@ -32,20 +32,49 @@ const transactionActions = {
 		if (!txns || txns.length === 0) return;
 		update((currentTxns) => {
 			const existingIds = new Set(currentTxns.map((t) => t.id));
-			const processedTxns = txns
-				.map((t) => ({
+			const newTxnsToAdd: Transaction[] = [];
+
+			for (const t of txns) {
+				const processedTxn = {
 					...t,
 					id: t.id || uuidv4(),
-					currency: t.currency?.toUpperCase() || 'USD', // Default currency
-                    date: t.date || 'unknown' // Ensure date exists
-				}))
-				.filter((t) => t.id && !existingIds.has(t.id)); // Filter out duplicates by ID
+					currency: t.currency?.toUpperCase() || 'USD',
+					date: resolveAndFormatDate(t.date) // Use resolver here too for consistency
+				};
 
-			if (processedTxns.length === 0) return currentTxns; // No new unique transactions
+				// Check 1: Already added by ID in this batch or previously?
+				if (
+					!processedTxn.id ||
+					existingIds.has(processedTxn.id) ||
+					newTxnsToAdd.some((nt) => nt.id === processedTxn.id)
+				) {
+					continue;
+				}
+
+				// Check 2: Basic Duplicate Check (same date, description, amount, direction)
+				const isPotentialDuplicate = currentTxns.some(
+					(existing) =>
+						existing.date === processedTxn.date &&
+						existing.description.toLowerCase() === processedTxn.description.toLowerCase() &&
+						existing.amount === processedTxn.amount &&
+						existing.direction === processedTxn.direction
+				);
+
+				if (isPotentialDuplicate) {
+					console.warn(
+						`[TransactionStore] Skipping potential duplicate: ${processedTxn.description} on ${processedTxn.date}`
+					);
+					continue;
+				}
+
+				newTxnsToAdd.push(processedTxn);
+			}
+
+			if (newTxnsToAdd.length === 0) return currentTxns; // No new unique transactions
 
 			showTemporarySuccessMessage();
 			debounceAnalysis(() => analysisStore.run()); // Trigger analysis
-			return [...currentTxns, ...processedTxns];
+			return [...currentTxns, ...newTxnsToAdd];
 		});
 	},
 
@@ -62,8 +91,8 @@ const transactionActions = {
 			if (remainingTxns.length === initialLength) return currentTxns; // No change
 
 			debounceAnalysis(() => analysisStore.run());
-            // If the deleted transaction was selected, clear the selection in uiStore
-            uiStore.clearSelectionIfMatches(id);
+			// If the deleted transaction was selected, clear the selection in uiStore
+			uiStore.clearSelectionIfMatches(id);
 			return remainingTxns;
 		});
 	},
@@ -83,19 +112,20 @@ const transactionActions = {
 	},
 
 	assignCategory: (transactionId: string, category: Category) => {
-		update(currentTxns => {
+		update((currentTxns) => {
 			const index = currentTxns.findIndex((t) => t.id === transactionId);
 			if (index === -1) return currentTxns;
 			const newTransactions = [...currentTxns];
 			// Ensure category is valid if needed (could check against categoryStore)
-			newTransactions[index] = { ...newTransactions[index], category };
+			// FIX: Use the correct property 'categories' and assign as an array
+			newTransactions[index] = { ...newTransactions[index], categories: [category] };
 			debounceAnalysis(() => analysisStore.run());
 			return newTransactions;
 		});
 	},
 
 	addNotes: (transactionId: string, notes: string) => {
-		update(currentTxns => {
+		update((currentTxns) => {
 			const index = currentTxns.findIndex((t) => t.id === transactionId);
 			if (index === -1) return currentTxns;
 			const newTransactions = [...currentTxns];
@@ -103,7 +133,7 @@ const transactionActions = {
 			// No analysis run needed for notes
 			return newTransactions;
 		});
-	},
+	}
 };
 
 export const transactionStore = {
