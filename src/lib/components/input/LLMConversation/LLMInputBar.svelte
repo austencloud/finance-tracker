@@ -13,7 +13,6 @@
 	let showStarterPanel = false;
 	$: isProcessingValue = $appStore.conversation.isProcessing;
 
-
 	function useStarterResponse(text: string) {
 		userInput = text;
 		showStarterPanel = false;
@@ -28,7 +27,6 @@
 			isSubmitting = false;
 		}, 300);
 	}
-
 
 	function handleSubmit() {
 		const currentInput = userInput.trim();
@@ -98,6 +96,24 @@
 			console.error('Failed to generate example:', err);
 		}
 	}
+
+	async function generateSplitExample() {
+		const today = new Date().toISOString().split('T')[0];
+		const system = getSystemPrompt(today);
+		const prompt = `Generate a user-style transaction input that describes splitting a bill or expense with others. The message should clearly mention splitting, the total amount, and optionally the context (e.g. dinner, rent, groceries). Use natural, realistic phrasing. Output only one line, no explanation.`;
+		try {
+			const aiResponse = await llmChat([makeSystemMsg(system), makeUserMsg(prompt)], {
+				temperature: 0.8,
+				forceSimple: true,
+				rawUserText: ''
+			});
+			const example = aiResponse.split('\n')[0].trim().replace(/^"|"$/g, '');
+			userInput = example;
+			setTimeout(() => debounceSubmit(), 0);
+		} catch (err) {
+			console.error('Failed to generate split example:', err);
+		}
+	}
 </script>
 
 <div class="input-container">
@@ -126,6 +142,14 @@
 				disabled={isProcessingValue || isSubmitting}
 			>
 				Level 3 Example
+			</button>
+			<button
+				type="button"
+				class="starter-button"
+				on:click={generateSplitExample}
+				disabled={isProcessingValue || isSubmitting}
+			>
+				Split Bill Example
 			</button>
 		</div>
 		<textarea

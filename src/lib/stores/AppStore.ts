@@ -19,7 +19,8 @@ import type {
 	BulkProcessingState,
 	ProcessingChunk,
 	ChunkStatus,
-	AnalysisState
+	AnalysisState,
+	SplitBillContext
 } from './types';
 import { OLLAMA_CONFIG } from '$lib/config/ai-config';
 import { getAmountInBase } from '$lib/services/conversion';
@@ -93,7 +94,10 @@ const initialConversationState: ConversationState = {
 		pendingDuplicateTransactions: [],
 		waitingForCorrectionClarification: false,
 		pendingCorrectionDetails: null,
-		llmAvailable: false
+		llmAvailable: false,
+		waitingForSplitBillShare: false, // Add initial state
+		splitBillContext: null, // Add initial state
+		lastCorrectionTxnId: null // Ensure this was added previously if needed
 	}
 };
 
@@ -162,6 +166,38 @@ export const appStore = {
 		});
 	},
 
+	// --- NEW METHODS for Split Bill State ---
+	setWaitingForSplitBillShare(context: SplitBillContext) {
+		appStateStore.update((s) => ({
+			...s,
+			conversation: {
+				...s.conversation,
+				_internal: {
+					...s.conversation._internal,
+					waitingForSplitBillShare: true,
+					splitBillContext: context // Store the whole context object
+				}
+			}
+		}));
+	},
+
+	clearSplitBillWaitState() {
+		appStateStore.update((s) => {
+			if (!s.conversation._internal.waitingForSplitBillShare) return s; // No change if not waiting
+			return {
+				...s,
+				conversation: {
+					...s.conversation,
+					_internal: {
+						...s.conversation._internal,
+						waitingForSplitBillShare: false,
+						splitBillContext: null
+					}
+				}
+			};
+		});
+	},
+	// --- End NEW METHODS ---
 	resetConversation() {
 		appStateStore.update((s) => ({
 			...s,
@@ -454,91 +490,96 @@ export const appStore = {
 		});
 	},
 
-    async getCategoryTotals(): Promise<CategoryTotals> {
-        const state = get(appStateStore);
-        const totals: CategoryTotals = {};
-        let conversionErrors = 0;
+	async getCategoryTotals(): Promise<CategoryTotals> {
+		const state = get(appStateStore);
+		const totals: CategoryTotals = {};
+		let conversionErrors = 0;
 
-        // Initialize totals for all known categories
-        state.categories.forEach((cat) => {
-            totals[cat] = 0;
-        });
+		// Initialize totals for all known categories
+		state.categories.forEach((cat) => {
+			totals[cat] = 0;
+		});
 
-        for (const txn of state.transactions) {
-            if (!txn.category || !totals.hasOwnProperty(txn.category)) {
-                continue; // Skip if no category or category not tracked
-            }
+		for (const txn of state.transactions) {
+			if (!txn.category || !totals.hasOwnProperty(txn.category)) {
+				continue; // Skip if no category or category not tracked
+			}
 
-            const amountInBase = await getAmountInBase(txn); // Use helper
+			const amountInBase = await getAmountInBase(txn); // Use helper
 
-            if (amountInBase === null) {
-                conversionErrors++;
-                continue; // Skip if conversion failed
-            }
+			if (amountInBase === null) {
+				conversionErrors++;
+				continue; // Skip if conversion failed
+			}
 
-            const adjustedAmount = txn.direction === 'out' ? -Math.abs(amountInBase) : Math.abs(amountInBase);
-            totals[txn.category] += adjustedAmount;
-        }
-         if (conversionErrors > 0) {
-            console.warn(`[getCategoryTotals] Skipped ${conversionErrors} transactions due to missing date or conversion rate.`);
-         }
-        return totals; // Values are now in BASE_CURRENCY
-    },
+			const adjustedAmount =
+				txn.direction === 'out' ? -Math.abs(amountInBase) : Math.abs(amountInBase);
+			totals[txn.category] += adjustedAmount;
+		}
+		if (conversionErrors > 0) {
+			console.warn(
+				`[getCategoryTotals] Skipped ${conversionErrors} transactions due to missing date or conversion rate.`
+			);
+		}
+		return totals; // Values are now in BASE_CURRENCY
+	},
 
-    // runFinancialAnalysis already handles async, just ensure awaited functions return promises
-    async runFinancialAnalysis() {
-        const state = get(appStateStore);
-        if (state.transactions.length === 0) {
-            // Use setAnalysisResults to clear state properly
-             appStore.setAnalysisResults({ summary: null, anomalies: null, predictions: null });
-             // Also reset loading/error
-             appStore.setAnalysisLoading(false);
-             appStore.setAnalysisError(null);
-            return;
-        }
-        if (state.analysis.loading) return;
+	// runFinancialAnalysis already handles async, just ensure awaited functions return promises
+	async runFinancialAnalysis() {
+		const state = get(appStateStore);
+		if (state.transactions.length === 0) {
+			// Use setAnalysisResults to clear state properly
+			appStore.setAnalysisResults({ summary: null, anomalies: null, predictions: null });
+			// Also reset loading/error
+			appStore.setAnalysisLoading(false);
+			appStore.setAnalysisError(null);
+			return;
+		}
+		if (state.analysis.loading) return;
 
-        appStore.setAnalysisLoading(true);
-        try {
-            const currentTransactions = [...state.transactions]; // Use current state
-            // LLM Check remains sync
-            const llmCheck = await isOllamaAvailable();
+		appStore.setAnalysisLoading(true);
+		try {
+			const currentTransactions = [...state.transactions]; // Use current state
+			// LLM Check remains sync
+			const llmCheck = await isOllamaAvailable();
 
-            // Calls are now to the async versions of analytics functions
-            const summaryPromise = calculateFinancialSummary(currentTransactions);
-            const anomaliesPromise = llmCheck
-                ? detectAnomalies(currentTransactions)
-                : Promise.resolve({ anomalies: [] }); // Still resolve if LLM off
-            const predictionsPromise = predictFutureTransactions(currentTransactions); // predict doesn't need LLM check
+			// Calls are now to the async versions of analytics functions
+			const summaryPromise = calculateFinancialSummary(currentTransactions);
+			const anomaliesPromise = llmCheck
+				? detectAnomalies(currentTransactions)
+				: Promise.resolve({ anomalies: [] }); // Still resolve if LLM off
+			const predictionsPromise = predictFutureTransactions(currentTransactions); // predict doesn't need LLM check
 
-            // Promise.all remains the same, awaits the async functions
-            const [summaryResult, anomaliesResult, predictionsResult] = await Promise.all([
-                summaryPromise,
-                anomaliesPromise,
-                predictionsPromise
-            ]);
+			// Promise.all remains the same, awaits the async functions
+			const [summaryResult, anomaliesResult, predictionsResult] = await Promise.all([
+				summaryPromise,
+				anomaliesPromise,
+				predictionsPromise
+			]);
 
-             // Adapt the shape for setAnalysisResults if needed, based on what analytics functions return
-             // Assuming they return objects matching { income, expense, net, savingsRate }, { anomalies }, { projectedMonthlyNet }
-             const finalSummary = summaryResult ? {
-                 totalIncome: summaryResult.income,
-                 totalExpenses: summaryResult.expense,
-                 netCashflow: summaryResult.net,
-                 savingsRate: summaryResult.savingsRate,
-                 // Add conversionErrors if needed: conversionErrors: summaryResult.conversionErrors
-             } : null;
+			// Adapt the shape for setAnalysisResults if needed, based on what analytics functions return
+			// Assuming they return objects matching { income, expense, net, savingsRate }, { anomalies }, { projectedMonthlyNet }
+			const finalSummary = summaryResult
+				? {
+						totalIncome: summaryResult.income,
+						totalExpenses: summaryResult.expense,
+						netCashflow: summaryResult.net,
+						savingsRate: summaryResult.savingsRate
+						// Add conversionErrors if needed: conversionErrors: summaryResult.conversionErrors
+					}
+				: null;
 
-            appStore.setAnalysisResults({
-                summary: finalSummary, // Pass the structured summary
-                anomalies: anomaliesResult, // Pass the { anomalies: [...] } object
-                predictions: predictionsResult // Pass the { projectedMonthlyNet: ... } object
-            });
-        } catch (error) {
-            console.error("Error during runFinancialAnalysis:", error);
-            appStore.setAnalysisError(error instanceof Error ? error.message : 'Unknown analysis error');
-        }
-        // Loading is set to false within setAnalysisResults/setAnalysisError
-    },
+			appStore.setAnalysisResults({
+				summary: finalSummary, // Pass the structured summary
+				anomalies: anomaliesResult, // Pass the { anomalies: [...] } object
+				predictions: predictionsResult // Pass the { projectedMonthlyNet: ... } object
+			});
+		} catch (error) {
+			console.error('Error during runFinancialAnalysis:', error);
+			appStore.setAnalysisError(error instanceof Error ? error.message : 'Unknown analysis error');
+		}
+		// Loading is set to false within setAnalysisResults/setAnalysisError
+	},
 
 	setLoading: (loading: boolean) => {
 		appStateStore.update((state) => ({ ...state, ui: { ...state.ui, loading } }));
@@ -656,5 +697,5 @@ export const appStore = {
 			...state,
 			analysis: { ...state.analysis, error, loading: false }
 		}));
-	},
+	}
 };

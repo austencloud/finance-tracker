@@ -54,8 +54,17 @@ export interface ConversationState {
 
 		// ← Add this line:
 		lastCorrectionTxnId?: string | null;
+		waitingForSplitBillShare?: boolean;
+		splitBillContext?: SplitBillContext; // Use the updated type
 	};
 }
+export type SplitBillContext = {
+	totalAmount: number;
+	currency: string;
+	originalMessage: string;
+	possibleDate: string;
+	description?: string; // <-- ADD THIS FIELD (make it optional if extraction might fail)
+} | null;
 
 export interface CategoryTotals {
 	[key: string]: number;

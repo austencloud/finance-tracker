@@ -25,6 +25,7 @@ import { handleFillDetails } from './handlers/handleFillDetails';
 import { handleCorrection } from './handlers/handleCorrection';
 import { handleExtraction } from './handlers/handleExtraction';
 import { handleNormalResponse } from './handlers/handleNormalResponse';
+import { handleSplitBillShareResponse } from './handlers/handleSplitBillShareResponse';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Regex helpers (unchanged)
@@ -103,16 +104,18 @@ export async function sendMessage(message: string): Promise<void> {
 	if (BULK_DIRECTION_ALL_OUT_REGEX.test(lower) && message.length < 50)
 		explicitDirectionIntent = 'out';
 
-	const handlers = [
-		handleDirectionClarification,
-		handleCountCorrection,
-		handleBulkDirectionCorrection,
-		handleFillDetails,
-		handleCorrection,
-		handleExtraction,
-		handleNormalResponse,
-		handleMood
-	];
+    const handlers = [
+        handleDirectionClarification,
+        handleSplitBillShareResponse, // <-- ADD NEW HANDLER HERE (High Priority)
+        handleCountCorrection,
+        handleBulkDirectionCorrection,
+        handleFillDetails,
+        handleCorrection,
+        handleExtraction,
+        handleNormalResponse,
+        handleMood
+    ];
+
 
 	let assistantResponse = '';
 

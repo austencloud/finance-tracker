@@ -10,6 +10,8 @@ import {
 import { getExtractionPrompt, getSystemPrompt } from '../../prompts';
 import { parseTransactionsFromLLMResponse } from '../../extraction/llm-parser';
 import { getLLMFallbackResponse, llmChat } from '../../llm-helpers';
+import { resolveAndFormatDate } from '$lib/utils/date';
+import { categorizeTransaction } from '$lib/services/categorizer';
 
 function normalizeDescription(desc: string | undefined | null): string {
 	if (!desc) return 'unknown';
@@ -27,11 +29,11 @@ export async function handleExtraction(
 	const splitRegex =
 		/\bsplit\b(?:.*?)(?:[\$£€¥]|\b(?:USD|EUR|GBP|JPY|CAD|AUD|CHF|CNY|INR)\b)?\s?((?:\d{1,3}(?:,\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?))\s?([kK])?/i;
 	const splitMatch = message.match(splitRegex);
+	const today = new Date().toISOString().split('T')[0];
 
-	if (splitMatch) {
+	if (splitMatch && splitMatch.index !== undefined) {
 		let amountStr = splitMatch[1].replace(/,/g, '');
 		const kSuffix = splitMatch[2];
-
 		if (kSuffix) {
 			const num = parseFloat(amountStr);
 			amountStr = isNaN(num) ? amountStr : (num * 1000).toString();
@@ -39,11 +41,46 @@ export async function handleExtraction(
 		const total = parseFloat(amountStr);
 
 		if (!isNaN(total)) {
+			const currencyMatch = splitMatch[0].match(/[\$£€¥]|\b(?:USD|EUR|GBP|JPY|CAD|AUD|CHF|CNY|INR)\b/i);
+			const detectedCurrency = currencyMatch ? currencyMatch[0].toUpperCase() : 'USD';
+
+			let contextDescription = 'Split Bill';
+			try {
+				const splitKeywordEndIndex = message.toLowerCase().indexOf('split') + 5;
+				const matchStartIndex = splitMatch.index;
+				if (matchStartIndex > splitKeywordEndIndex) {
+					let rawDesc = message.substring(splitKeywordEndIndex, matchStartIndex).trim();
+					rawDesc = rawDesc.replace(/^(a|the|an)\s+/i, '');
+					rawDesc = rawDesc.replace(/\s+(?:bill|costs?)$/i, '');
+					rawDesc = rawDesc.replace(/\s+(?:with|for|at|on)$/i, '');
+					rawDesc = rawDesc.replace(/^[,\s.:-]+|[,\s.:-]+$/g, '');
+					const keywords = ['lunch', 'dinner', 'groceries', 'tickets', 'cab', 'hotel', 'rent', 'sushi'];
+					const keywordMatch = keywords.find(kw => rawDesc.toLowerCase().includes(kw));
+					if (keywordMatch) {
+						contextDescription = keywordMatch.charAt(0).toUpperCase() + keywordMatch.slice(1);
+					} else if (rawDesc) {
+						contextDescription = rawDesc;
+					}
+				}
+			} catch (e) {
+				console.error("Error extracting split description context:", e);
+			}
+
+			const contextDate = resolveAndFormatDate(message);
+
+			appStore.setWaitingForSplitBillShare({
+				totalAmount: total,
+				currency: detectedCurrency,
+				originalMessage: message,
+				possibleDate: contextDate,
+				description: contextDescription
+			});
+
 			appStore.addConversationMessage(
 				'assistant',
-				`You mentioned splitting a bill (total approx. ${total}). How much was *your* specific share?`
+				`You mentioned splitting "${contextDescription}" (total approx. ${total} ${detectedCurrency}). How much was *your* specific share (just the number)?`
 			);
-			appStore.setConversationStatus('Awaiting split-bill details', 100);
+			appStore.setConversationStatus('Awaiting split-bill share', 100);
 			return { handled: true, response: '' };
 		} else {
 			console.warn('[ExtractionHandler] Could not parse split amount from:', splitMatch[0]);
@@ -71,7 +108,6 @@ export async function handleExtraction(
 	console.log(`[ExtractionHandler] Generated batchId: ${batchId}`);
 
 	try {
-		const today = new Date().toISOString().split('T')[0];
 		const extractionPrompt = getExtractionPrompt(message, today);
 		const messages = [
 			{ role: 'system' as const, content: getSystemPrompt(today) },
