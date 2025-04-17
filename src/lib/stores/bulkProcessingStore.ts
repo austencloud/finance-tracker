@@ -1,6 +1,5 @@
-// src/lib/stores/bulkProcessingStore.ts
 import { writable } from 'svelte/store';
-import type { BulkProcessingState, ProcessingChunk, ChunkStatus, Transaction } from '../types/types'; // Adjust path
+import type { BulkProcessingState, ProcessingChunk, ChunkStatus, Transaction } from '../types/types';
 
 const initialBulkProcessingState: BulkProcessingState = {
 	processingChunks: [],
@@ -21,12 +20,17 @@ export const bulkProcessingStore = {
 			message: '',
 			transactionCount: 0
 		}));
+		
+		console.log('[bulkProcessingStore] Initializing chunks:', initialChunks.length);
+		
 		// Reset state completely when initializing new bulk process
 		set({
             processingChunks: initialChunks,
             processingProgress: 0,
-            isBulkProcessing: true
+            isBulkProcessing: true // This is critical - sets flag that controls UI visibility
         });
+        
+        console.log('[bulkProcessingStore] Set isBulkProcessing to true');
 	},
 	updateChunkStatus: (
 		chunkIndex: number,
@@ -52,6 +56,7 @@ export const bulkProcessingStore = {
 		});
 	},
 	finalize: () => {
+		console.log('[bulkProcessingStore] Finalizing and resetting state');
 		// Reset the bulk processing state completely
 		set(initialBulkProcessingState);
 	}

@@ -1,63 +1,72 @@
 <script lang="ts">
-	import { appStore } from '$lib/stores/AppStore';
 	import { derived, get } from 'svelte/store';
 	import { tick } from 'svelte';
-	import type { Transaction, ProcessingChunk } from '$lib/types/types'; // Added ProcessingChunk type
+	import { bulkProcessingStore } from '$lib/stores/bulkProcessingStore';
+	import type { Transaction, ProcessingChunk } from '$lib/types/types';
 
-	// Recreate derived stats locally - Updated transactionCount logic
-	const processingStats = derived(appStore, ($appStore) => {
-		const chunks = $appStore.bulkProcessing.processingChunks;
-		const successChunks = chunks.filter((c: { status: string; }) => c.status === 'success'); // Filter successful chunks
-		const errorChunks = chunks.filter((c: { status: string; }) => c.status === 'error').length;
+	// Create a derived store for processing statistics
+	const processingStats = derived(bulkProcessingStore, ($bulkProcessingStore) => {
+		const chunks = $bulkProcessingStore.processingChunks;
+		const successChunks = chunks.filter((c) => c.status === 'success'); // Filter successful chunks
+		const errorChunks = chunks.filter((c) => c.status === 'error').length;
 		const pendingChunks = chunks.filter(
-			(c: { status: string }) => c.status === 'pending' || c.status === 'processing'
+			(c) => c.status === 'pending' || c.status === 'processing'
 		).length;
-		// --- Calculate count from successful chunks ---
-		const transactionCount = successChunks.reduce((sum: any, chunk: { transactionCount: any; }) => sum + chunk.transactionCount, 0);
+		// Calculate count from successful chunks
+		const transactionCount = successChunks.reduce((sum, chunk) => sum + chunk.transactionCount, 0);
 		return {
 			totalChunks: chunks.length,
-			successChunks: successChunks.length, // Use length here
+			successChunks: successChunks.length,
 			errorChunks,
 			pendingChunks,
-			transactionCount, // Use the calculated sum
+			transactionCount,
 			isComplete: chunks.length > 0 && pendingChunks === 0
 		};
 	});
 
-	// --- REMOVE completeAndtransactions.add function ---
-	// async function completeAndtransactions.add() { ... }
-
-	// Function to close the UI (replaces completeAndtransactions.add)
+	// Function to close the UI
 	function closeProcessingUI() {
-		// Just finalize/clear the bulk UI state
-		appStore.bulkProcessing.finalize(true); // Indicate normal completion
+		// Reset the bulk processing state
+		bulkProcessingStore.finalize();
 	}
 
-	// Function to cancel processing (logic remains the same)
+	// Function to cancel processing
 	function cancelProcessing() {
 		if (
 			confirm(
 				'Are you sure you want to cancel processing? This cannot be undone for already added transactions.'
 			)
 		) {
-			// Added warning
-			appStore.bulkProcessing.finalize(false); // Indicate cancellation
+			bulkProcessingStore.finalize();
 		}
+	}
+
+	// Fast click animation state
+	let buttonPressed = false;
+	let buttonRipple = false;
+
+	function animateDoneButton() {
+		buttonPressed = true;
+		buttonRipple = false;
+		setTimeout(() => {
+			buttonRipple = true;
+			setTimeout(() => {
+				buttonPressed = false;
+				buttonRipple = false;
+			}, 180);
+		}, 5);
 	}
 </script>
 
-{#if $appStore.bulkProcessing.isBulkProcessing}
+{#if $bulkProcessingStore.isBulkProcessing}
 	<div class="bulk-processing-container">
 		<h3>Processing Large Transaction Set</h3>
 
 		<div class="progress-header">
 			<div class="progress-bar-container">
-				<div
-					class="progress-bar"
-					style="width: {$appStore.bulkProcessing.processingProgress}%"
-				></div>
+				<div class="progress-bar" style="width: {$bulkProcessingStore.processingProgress}%"></div>
 			</div>
-			<div class="progress-text">{$appStore.bulkProcessing.processingProgress}%</div>
+			<div class="progress-text">{$bulkProcessingStore.processingProgress}%</div>
 		</div>
 
 		<div class="stats-grid">
@@ -82,7 +91,7 @@
 		<div class="chunks-list">
 			<h4>Processing Status</h4>
 			<div class="chunks-container">
-				{#each $appStore.bulkProcessing.processingChunks as chunk (chunk.id)}
+				{#each $bulkProcessingStore.processingChunks as chunk (chunk.id)}
 					<div class="chunk-item status-{chunk.status}">
 						<div class="chunk-icon">
 							{#if chunk.status === 'pending'}
@@ -130,7 +139,16 @@
 					{/if}
 				</div>
 
-				<button class="primary-button" on:click={closeProcessingUI}> Done </button>
+				<button
+					class="primary-button {buttonPressed ? 'pressed' : ''}"
+					on:click={() => {
+						animateDoneButton();
+						closeProcessingUI();
+					}}
+				>
+					<span class="ripple" class:ripple-active={buttonRipple}></span>
+					Done
+				</button>
 			{:else}
 				<button class="cancel-button" on:click={cancelProcessing}> Cancel Processing </button>
 			{/if}
@@ -337,15 +355,54 @@
 	.primary-button {
 		background-color: #3498db;
 		color: white;
+		position: relative;
+		transition:
+			transform 0.09s cubic-bezier(0.4, 2, 0.6, 1),
+			background 0.14s;
+		will-change: transform;
+		overflow: hidden;
 	}
 
-	.primary-button:hover:not(:disabled) {
-		background-color: #2980b9;
+	.primary-button.pressed {
+		transform: scale(0.94);
+		background: #4fc3f7 !important;
 	}
 
-	.primary-button:disabled {
-		background-color: #bdc3c7;
-		cursor: not-allowed;
+	.ripple {
+		position: absolute;
+		left: 50%;
+		top: 50%;
+		width: 0;
+		height: 0;
+		background: rgba(255, 255, 255, 0.35);
+		border-radius: 50%;
+		pointer-events: none;
+		transform: translate(-50%, -50%) scale(1);
+		opacity: 0;
+		transition: opacity 0.12s;
+		z-index: 1;
+	}
+
+	.ripple-active {
+		width: 180%;
+		height: 180%;
+		opacity: 1;
+		animation: ripple-pop-fast 0.18s cubic-bezier(0.4, 2, 0.6, 1);
+	}
+
+	@keyframes ripple-pop-fast {
+		0% {
+			transform: translate(-50%, -50%) scale(0.2);
+			opacity: 0.7;
+		}
+		60% {
+			transform: translate(-50%, -50%) scale(1.1);
+			opacity: 0.35;
+		}
+		100% {
+			transform: translate(-50%, -50%) scale(1.3);
+			opacity: 0;
+		}
 	}
 
 	.cancel-button {

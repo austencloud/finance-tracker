@@ -17,6 +17,22 @@
 	let submitTimeoutId: ReturnType<typeof setTimeout> | null = null;
 	let isSubmitting = false; // Local state to prevent double clicks via debounce
 
+	// Animation state for starter buttons
+	let pressed = [false, false, false, false];
+	let ripples = [false, false, false, false];
+
+	function animateButton(idx: number) {
+		pressed[idx] = true;
+		ripples[idx] = false;
+		setTimeout(() => {
+			ripples[idx] = true;
+			setTimeout(() => {
+				pressed[idx] = false;
+				ripples[idx] = false;
+			}, 350);
+		}, 10);
+	}
+
 	// Reactive variable bound to the specific store's state
 	$: isProcessingValue = $conversationStore.isProcessing; // Use conversationStore
 
@@ -130,38 +146,54 @@
 		<div class="starter-panel">
 			<button
 				type="button"
-				class="starter-button"
-				on:click={() => generateExample(1)}
+				class="starter-button {pressed[0] ? 'pressed' : ''}"
+				on:click={() => {
+					animateButton(0);
+					generateExample(1);
+				}}
 				disabled={isProcessingValue || isSubmitting}
 				title="Generate a simple example input"
 			>
+				<span class="ripple" class:ripple-active={ripples[0]}></span>
 				Level 1 Example
 			</button>
 			<button
 				type="button"
-				class="starter-button"
-				on:click={() => generateExample(2)}
+				class="starter-button {pressed[1] ? 'pressed' : ''}"
+				on:click={() => {
+					animateButton(1);
+					generateExample(2);
+				}}
 				disabled={isProcessingValue || isSubmitting}
 				title="Generate a moderately detailed example input"
 			>
+				<span class="ripple" class:ripple-active={ripples[1]}></span>
 				Level 2 Example
 			</button>
 			<button
 				type="button"
-				class="starter-button"
-				on:click={() => generateExample(3)}
+				class="starter-button {pressed[2] ? 'pressed' : ''}"
+				on:click={() => {
+					animateButton(2);
+					generateExample(3);
+				}}
 				disabled={isProcessingValue || isSubmitting}
 				title="Generate a vague or complex example input"
 			>
+				<span class="ripple" class:ripple-active={ripples[2]}></span>
 				Level 3 Example
 			</button>
 			<button
 				type="button"
-				class="starter-button"
-				on:click={generateSplitExample}
+				class="starter-button {pressed[3] ? 'pressed' : ''}"
+				on:click={() => {
+					animateButton(3);
+					generateSplitExample();
+				}}
 				disabled={isProcessingValue || isSubmitting}
 				title="Generate an example mentioning a split bill"
 			>
+				<span class="ripple" class:ripple-active={ripples[3]}></span>
 				Split Bill Example
 			</button>
 		</div>
@@ -266,11 +298,50 @@
 		min-width: 100px; /* Adjust min-width */
 		text-align: center;
 		font-size: 13px; /* Slightly smaller font */
+		position: relative;
+		transition:
+			transform 0.12s cubic-bezier(0.4, 2, 0.6, 1),
+			background 0.18s;
+		will-change: transform;
 	}
-	.starter-button:hover:not(:disabled) {
-		background-color: #2c9e6d;
+	.starter-button.pressed {
+		transform: scale(0.93);
+		background: #43e6a6 !important;
 	}
-
+	.ripple {
+		position: absolute;
+		left: 50%;
+		top: 50%;
+		width: 0;
+		height: 0;
+		background: rgba(255, 255, 255, 0.45);
+		border-radius: 50%;
+		pointer-events: none;
+		transform: translate(-50%, -50%) scale(1);
+		opacity: 0;
+		transition: opacity 0.2s;
+		z-index: 1;
+	}
+	.ripple-active {
+		width: 180%;
+		height: 180%;
+		opacity: 1;
+		animation: ripple-pop 0.35s cubic-bezier(0.4, 2, 0.6, 1);
+	}
+	@keyframes ripple-pop {
+		0% {
+			transform: translate(-50%, -50%) scale(0.2);
+			opacity: 0.7;
+		}
+		60% {
+			transform: translate(-50%, -50%) scale(1.1);
+			opacity: 0.45;
+		}
+		100% {
+			transform: translate(-50%, -50%) scale(1.3);
+			opacity: 0;
+		}
+	}
 	button {
 		padding: 8px 15px;
 		color: white;

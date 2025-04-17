@@ -3,10 +3,10 @@
 	import { get } from 'svelte/store'; // Keep get for handleGenerateReport
 
 	// --- Import Separated Stores ---
-	// import { appStore } from '$lib/stores/AppStore'; // REMOVE old monolithic store
 	import { conversationStore } from '$lib/stores/conversationStore';
 	import { transactionStore } from '$lib/stores/transactionStore';
 	import { categories } from '$lib/stores/categoryStore'; // Import readable categories store
+	import { bulkProcessingStore } from '$lib/stores/bulkProcessingStore'; // Import bulk store
 
 	// --- Import Selectors ---
 	import { getCategoryTotalsInBase } from '$lib/stores/selectors'; // Import async selector
@@ -21,6 +21,9 @@
 	import LLMWithDataLayout from '$lib/components/input/LLMConversation/LLMWithDataLayout.svelte';
 	import FinancialAnalysis from '$lib/components/analysis/FinancialAnalysis.svelte';
 	import TransactionModal from '$lib/components/transactions/TransactionModal.svelte';
+	import BulkProcessingUI from '$lib/components/transactions/BulkProcessingUI.svelte';
+	import BulkProcessingDebug from '$lib/components/transactions/BulkProcessingDebug.svelte';
+	let showDebugTools = true; // Set to false for production
 
 	onMount(async () => {
 		// Initialize conversation service (doesn't interact with store directly here)
@@ -47,6 +50,9 @@
 			conversationStore.setLLMAvailability(false);
 		}
 
+		// Log the initial state of bulkProcessingStore for debugging
+		console.log('[App] Initial bulkProcessingStore state:', get(bulkProcessingStore));
+
 		// No need to trigger analysis here, FinancialAnalysis component handles it
 	});
 
@@ -71,17 +77,21 @@
 	{/if}
 
 	<LLMWithDataLayout />
+	<BulkProcessingUI />
 	<FinancialAnalysis />
 
 	<div class="global-actions">
 		<h2>Actions</h2>
 		<button
 			on:click={handleGenerateReport}
-			disabled={$transactionStore.length === 0} class="action-button primary-action"
+			disabled={$transactionStore.length === 0}
+			class="action-button primary-action"
 		>
 			Generate HTML Report
 		</button>
-		</div>
+	</div>
+
+
 </main>
 
 <TransactionModal />

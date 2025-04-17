@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
 import { get } from 'svelte/store'; // Keep for potential future use
 
 // Import the specific handler to test
-import { handleExtraction } from '$lib/services/ai/conversation/handlers/handleExtraction';
+import { handleExtraction } from '$lib/services/ai/conversation/handlers/extractionHandler';
 
 // Import AppStore types
 import type { AppState, Transaction, ConversationMessage, Category } from '$lib/types/types';

@@ -1,59 +1,55 @@
 <script lang="ts">
-	import { derived } from 'svelte/store'; // Import derived
-	import { appStore } from '$lib/stores/AppStore'; // Import the central store
-	import type { Category, Transaction } from '$lib/types/types'; // Keep type imports
+	import { derived } from 'svelte/store';
+	// Replace monolithic store imports with specific stores
+	import { transactionStore } from '$lib/stores/transactionStore';
+	import { filterStore } from '$lib/stores/filterStore';
+	import { uiStore } from '$lib/stores/uiStore';
+	import { categories } from '$lib/stores/categoryStore';
+	import { sortedFilteredTransactions } from '$lib/stores/derivedStores';
+	import type { Category, Transaction } from '$lib/types/types';
 
-	// --- Local Derived Store for Sorted Transactions ---
-	// Recreate the sorting/filtering logic reactively based on appStore
-	const sortedTransactions = derived(appStore, ($appStore) => {
-		// Use the selector method from the store
-		// Note: This derived store re-runs whenever *any* part of appStore changes.
-		// For complex apps, more granular derivations might be considered, but this is often fine.
-		return appStore.getSortedFilteredTransactions();
-	});
-
-	// --- Handlers calling appStore actions ---
+	// Handlers using the new specific stores
 	function handleUpdateCategory(event: Event, transactionId: string) {
 		const target = event.target as HTMLSelectElement;
-		appStore.assignCategory(transactionId, target.value as Category);
+		transactionStore.assignCategory(transactionId, target.value as Category);
 	}
 
 	function showDetails(transactionId: string) {
-		appStore.selectTransactionForDetails(transactionId);
+		uiStore.selectTransactionForDetails(transactionId);
 	}
 </script>
 
-{#if $appStore.ui.loading}
+{#if $uiStore.loading}
 	<p>Loading transactions...</p>
-{:else if $sortedTransactions.length > 0}
+{:else if $sortedFilteredTransactions.length > 0}
 	<div class="transactions-table">
 		<table>
 			<thead>
 				<tr>
-					<th class="sortable" on:click={() => appStore.toggleSort('date')}>
-						Date {$appStore.filters.sortField === 'date'
-							? $appStore.filters.sortDirection === 'asc'
+					<th class="sortable" on:click={() => filterStore.toggleSort('date')}>
+						Date {$filterStore.sortField === 'date'
+							? $filterStore.sortDirection === 'asc'
 								? '↑'
 								: '↓'
 							: ''}
 					</th>
-					<th class="sortable" on:click={() => appStore.toggleSort('description')}>
-						Description {$appStore.filters.sortField === 'description'
-							? $appStore.filters.sortDirection === 'asc'
+					<th class="sortable" on:click={() => filterStore.toggleSort('description')}>
+						Description {$filterStore.sortField === 'description'
+							? $filterStore.sortDirection === 'asc'
 								? '↑'
 								: '↓'
 							: ''}
 					</th>
-					<th class="amount sortable" on:click={() => appStore.toggleSort('amount')}>
-						Amount {$appStore.filters.sortField === 'amount'
-							? $appStore.filters.sortDirection === 'asc'
+					<th class="amount sortable" on:click={() => filterStore.toggleSort('amount')}>
+						Amount {$filterStore.sortField === 'amount'
+							? $filterStore.sortDirection === 'asc'
 								? '↑'
 								: '↓'
 							: ''}
 					</th>
-					<th class="sortable" on:click={() => appStore.toggleSort('category')}>
-						Category {$appStore.filters.sortField === 'category'
-							? $appStore.filters.sortDirection === 'asc'
+					<th class="sortable" on:click={() => filterStore.toggleSort('category')}>
+						Category {$filterStore.sortField === 'category'
+							? $filterStore.sortDirection === 'asc'
 								? '↑'
 								: '↓'
 							: ''}
@@ -62,7 +58,7 @@
 				</tr>
 			</thead>
 			<tbody>
-				{#each $sortedTransactions as transaction (transaction.id)}
+				{#each $sortedFilteredTransactions as transaction (transaction.id)}
 					<tr class={transaction.direction === 'out' ? 'expense' : ''}>
 						<td>{transaction.date}</td>
 						<td>
@@ -83,7 +79,7 @@
 								value={transaction.category}
 								on:change={(e) => handleUpdateCategory(e, transaction.id)}
 							>
-								{#each $appStore.categories as category (category)}
+								{#each $categories as category (category)}
 									<option value={category}>{category}</option>
 								{/each}
 							</select>
@@ -94,7 +90,7 @@
 							</button>
 							<button
 								class="delete-button"
-								on:click={() => appStore.deleteTransaction(transaction.id)}
+								on:click={() => transactionStore.deleteById(transaction.id)}
 							>
 								Delete
 							</button>
@@ -104,7 +100,7 @@
 			</tbody>
 		</table>
 	</div>
-{:else if $appStore.transactions.length === 0}
+{:else if $transactionStore.length === 0}
 	<p>No transactions to display. Paste your data or use the AI Assistant.</p>
 {:else}
 	<p>No transactions match your filters.</p>

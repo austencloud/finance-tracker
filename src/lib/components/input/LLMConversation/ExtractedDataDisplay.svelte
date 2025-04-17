@@ -10,6 +10,17 @@
 	// --- Helper Imports ---
 	import { formatCurrency } from '$lib/utils/helpers'; // Adjust path if needed
 
+	import { onMount } from 'svelte';
+	let copySuccess = false;
+
+	function copyTransactionsJson() {
+		const json = JSON.stringify($sortedFilteredTransactions, null, 2);
+		navigator.clipboard.writeText(json).then(() => {
+			copySuccess = true;
+			setTimeout(() => (copySuccess = false), 1500);
+		});
+	}
+
 	// --- Component Logic ---
 
 	/**
@@ -38,7 +49,33 @@
 </script>
 
 <div class="data-display-container">
-	<h4>Transactions ({$sortedFilteredTransactions.length} matching filters)</h4>
+	<div class="header-row">
+		<h4>Transactions ({$sortedFilteredTransactions.length} matching filters)</h4>
+		<button
+			class="copy-json-btn"
+			on:click={copyTransactionsJson}
+			aria-label="Copy transactions as JSON"
+			title="Copy all displayed transactions as JSON"
+			type="button"
+		>
+			<svg
+				width="18"
+				height="18"
+				viewBox="0 0 24 24"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path
+					d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"
+				></path></svg
+			>
+			{#if copySuccess}
+				<span class="copy-success">✓</span>
+			{/if}
+		</button>
+	</div>
 
 	{#if $sortedFilteredTransactions.length === 0}
 		<p class="no-transactions-placeholder">No transactions match the current filters.</p>
@@ -163,5 +200,58 @@
 		margin-left: 5px;
 		color: #6c757d; /* Grey */
 		font-style: italic;
+	}
+	.header-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 0;
+	}
+	.copy-json-btn {
+		background: none;
+		border: 1px solid #2980b9;
+		color: #2980b9;
+		border-radius: 4px;
+		padding: 4px 8px;
+		cursor: pointer;
+		transition:
+			background 0.15s,
+			border-color 0.15s;
+		position: relative;
+		display: flex;
+		align-items: center;
+	}
+	.copy-json-btn:hover {
+		background: #eaf2f8;
+		border-color: #145a8a;
+	}
+	.copy-success {
+		position: absolute;
+		top: -7px;
+		right: -7px;
+		background: #2ecc71;
+		color: #fff;
+		border-radius: 50%;
+		width: 16px;
+		height: 16px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 11px;
+		animation: fade-in-out 1.5s;
+	}
+	@keyframes fade-in-out {
+		0% {
+			opacity: 0;
+		}
+		10% {
+			opacity: 1;
+		}
+		90% {
+			opacity: 1;
+		}
+		100% {
+			opacity: 0;
+		}
 	}
 </style>
